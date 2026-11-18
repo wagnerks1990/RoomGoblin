@@ -104,6 +104,12 @@ test('SCORM bearer enrolls passwordlessly and reaches global chess lobby without
   assert.equal((await f.request(null,entry+'/chess/heartbeat','POST',{},h)).status,200);
   const directName=f.learning.chess.alias(f.learning.direct.authorize(id,token).id,id);
   assert.equal(directName,'Synthetic Guest');
+  const anotherToken=crypto.randomBytes(32).toString('hex');
+  const second=await f.request(null,entry+'/enroll','POST',{participantToken:anotherToken,reportedId:'synthetic-LMS-456',name:'Doe, Jane'},{Authorization:'RoomGoblin-Assignment '+key});
+  assert.equal(second.status,200);
+  const another=f.learning.direct.authorize(id,anotherToken);
+  assert.equal(f.learning.chess.alias(another.id,id),'Doe, Jane');
+  assert.equal(f.learning.chess.publicName(another.id,id,'white'),'Jane D.');
   const teacherList=await f.request(f.admin,'/api/v1/learning/teacher/chess');
   assert.equal(teacherList.body.matches.find(m=>m.id===created.body.match.id).white.name,'Synthetic Guest');
  }finally{await f.close();}
@@ -144,6 +150,17 @@ test('queue action automatically matches a player from a different class',async(
   const whiteView=await f.request(f.a,'/api/v1/learning/activities/'+a+'/chess');
   assert.equal(whiteView.body.matches.find(m=>m.id===first.body.match.id).status,'active');
  }finally{await f.close();}
+});
+
+test('public student gateway denies admin chess pages and limits leaderboards to GET',()=>{
+ const {allowedPath}=require('../src/learning-public');
+ const id='11111111-1111-4111-8111-111111111111';
+ assert.equal(allowedPath('GET','/learn/chess'),false);
+ assert.equal(allowedPath('GET','/learn/chess/app.js'),false);
+ assert.equal(allowedPath('GET','/api/v1/learning/teacher/chess'),false);
+ assert.equal(allowedPath('GET','/api/v1/learning/teacher/chess/leaderboard'),false);
+ assert.equal(allowedPath('GET','/api/v1/learning/direct/activities/'+id+'/chess/leaderboard'),true);
+ assert.equal(allowedPath('POST','/api/v1/learning/direct/activities/'+id+'/chess/leaderboard'),false);
 });
 
 test('global leaderboard derives results once, separates practice, and masks other classes',async()=>{
