@@ -260,11 +260,12 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
     learning.membership(req.learner,req.params.id,true);
     const rows=learning.db.prepare('SELECT c.* FROM learning_chess_matches c JOIN learning_activities a ON a.id=c.activity_id WHERE a.class_id=? ORDER BY c.updated_at DESC LIMIT 200').all(req.params.id);
-    res.json({ok:true,matches:rows.map(row=>chess.render(row))});
+    res.json({ok:true,matches:rows.map(row=>chess.render(row)),connected:chess.connected(req.params.id)});
   }));
   app.get(api+'/teacher/activities/:id/chess/matches/:matchId',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId,{teacher:true})})));
   // Direct-SCORM participants are authenticated by the existing assignment-only bearer.
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,matches:chess.list(req.learner,req.params.id)})));
+  app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
