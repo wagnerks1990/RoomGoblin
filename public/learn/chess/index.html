@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoomGoblin Chess Control Center</title><link rel="icon" href="/brand/roomgoblin_app_32x32.png">
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#0f172a;color:#e2e8f0}*{box-sizing:border-box}
+body{margin:0;padding:18px;max-width:1400px;margin-inline:auto}header,.toolbar,.stats,.columns{display:flex;gap:16px;flex-wrap:wrap;align-items:start}
+header{justify-content:space-between;align-items:center}a{color:#93c5fd}h1,h2{margin:.2em 0 .6em}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-top:16px;min-width:260px}
+.stats .card{flex:1;margin:0}.columns>section{flex:1;min-width:min(350px,100%)}
+button,select{font:inherit;padding:.55em .75em;border:1px solid #64748b;border-radius:7px;color:#f8fafc;background:#334155}
+button{cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #60a5fa}
+table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #475569;padding:8px}
+tr[aria-selected="true"]{background:#334155}
+.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));width:min(100%,560px);aspect-ratio:1}
+.sq{display:grid;place-items:center;font-size:clamp(20px,4.2vw,52px);font-family:"Segoe UI Symbol",serif;line-height:1}
+.sq.light{background:#f0d9b5;color:#111827}.sq.dark{background:#b58863;color:#111827}
+.muted{color:#cbd5e1}.status{min-height:2em}
+</style><script defer src="/learn/chess/app.js"></script></head>
+<body><header><div><p>ROOMGOBLIN / LEARNING</p><h1>Chess Control Center</h1><p class="muted">Teacher-only live match observer</p></div><div><a href="/learn">Teacher portal</a> · <a href="/controller/">Room controls</a></div></header>
+<div class="toolbar"><label>Class <select id="class" aria-label="Class"></select></label><button id="refresh">Refresh</button><span id="status" class="status" role="status" aria-live="polite"></span></div>
+<section class="stats" aria-label="Chess statistics"><article class="card"><strong id="active">0</strong><div>Active games</div></article><article class="card"><strong id="waiting">0</strong><div>Waiting games</div></article><article class="card"><strong id="connected">0</strong><div>Recently connected students</div></article></section>
+<div class="columns"><section class="card"><h2>Games</h2><p class="muted">Select a game to spectate. Refreshes approximately every 3 seconds.</p><div id="games"></div></section>
+<section class="card"><h2>Live spectator board</h2><div id="game-title" class="status">Select a match.</div><div id="board" class="board" role="img" aria-label="Current chess position"></div><p id="moves" class="muted"></p></section>
+<section class="card"><h2>Connected learners</h2><p class="muted">Participants heard from in the previous 35 seconds, not verified physical attendance.</p><div id="people"></div></section></div>
+</body></html>
