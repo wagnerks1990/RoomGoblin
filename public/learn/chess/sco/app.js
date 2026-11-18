@@ -4,6 +4,24 @@ const cfg=window.ROOMGOBLIN_SCORM,$=id=>document.getElementById(id),sdk=window.R
 const glyph={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 let api=null,modern=false,actor='',review=false,ready=false,matches=[],userId='',selected='',originSquare='',busy=false,lastScore=-1,retired=false,paused=false;
 const el=(tag,text)=>{const e=document.createElement(tag);e.textContent=String(text??'');return e;};
+function renderLeaderboard(data){
+ const root=$('leaderboard');root.replaceChildren();
+ $('leaderboard-info').textContent=data.rules+' '+data.identity;
+ const table=el('table'),thead=el('thead'),head=el('tr');
+ for(const value of ['Rank','Player','Games','Wins','Losses','Draws','Win %','Practice'])head.append(el('th',value));
+ thead.append(head);table.append(thead);
+ const body=el('tbody');
+ for(const p of data.players){const row=el('tr');if(p.me)row.style.fontWeight='bold';
+  for(const value of [p.rank,p.label,p.games,p.wins,p.losses,p.draws,p.winRate+'%',p.practice])row.append(el('td',value));
+  body.append(row);}
+ table.append(body);root.append(table);
+ if(!data.players.length)root.append(el('p','No recorded games yet.'));
+}
+async function refreshLeaderboard(){
+ if(!ready||retired||!sameActor()||document.hidden)return;
+ try{const response=await sdk.request('/activities/'+cfg.activityId+'/chess/leaderboard');if(!retired)renderLeaderboard(response);}
+ catch(e){$('leaderboard-info').textContent='Leaderboard is unavailable: '+e.message;}
+}
 function findApi(){for(let w=window,i=0;w&&i<32;i++){try{if(w.API)return {api:w.API,modern:false};if(w.API_1484_11)return {api:w.API_1484_11,modern:true};if(w.parent===w)break;w=w.parent;}catch{break;}}return null;}
 const get=key=>api?.[modern?'GetValue':'LMSGetValue'](key),set=(key,value)=>api?.[modern?'SetValue':'LMSSetValue'](key,String(value)),commit=()=>api?.[modern?'Commit':'LMSCommit']('');
 function sameActor(){return !!actor&&!retired&&String(get(modern?'cmi.learner_id':'cmi.core.student_id')||'')===actor;}
@@ -50,12 +68,12 @@ function init(){const found=findApi();if(!found){$('status').textContent='Launch
  try{api[modern?'Initialize':'LMSInitialize']('');actor=String(get(modern?'cmi.learner_id':'cmi.core.student_id')||'');review=['browse','review'].includes(get(modern?'cmi.mode':'cmi.core.lesson_mode'));const stored=JSON.parse(get('cmi.suspend_data')||'{}');if(stored.actor===actor)cfg.participantCredential=stored.credential;}catch{}
  if(!actor){$('status').textContent='Schoology learner identity is unavailable.';return;}
  $('create').onclick=()=>action('','POST',{mode:'multiplayer'});$('computer').onclick=()=>action('','POST',{mode:'computer'});$('solo').onclick=()=>action('','POST',{mode:'solo'});$('refresh').onclick=pull;
- window.addEventListener('roomgoblin:ready',()=>{ready=true;$('create').disabled=review;$('computer').disabled=review;$('solo').disabled=review;$('refresh').disabled=false;saveCredential();pull();});
+ window.addEventListener('roomgoblin:ready',()=>{ready=true;$('create').disabled=review;$('computer').disabled=review;$('solo').disabled=review;$('refresh').disabled=false;saveCredential();pull();refreshLeaderboard();});
  window.addEventListener('roomgoblin:credential',saveCredential);
  window.addEventListener('roomgoblin:identity-changed',()=>{retired=true;ready=false;matches=[];$('board').replaceChildren();$('lobby').replaceChildren();$('status').textContent='Learner changed. Reopen the assignment.';});
  window.addEventListener('roomgoblin:control',e=>{paused=!!e.detail.paused;$('create').disabled=review||paused;$('computer').disabled=review||paused;$('solo').disabled=review||paused;});
  setInterval(()=>{if(ready&&sameActor()&&!review&&!document.hidden)sdk.request('/activities/'+cfg.activityId+'/chess/heartbeat','POST').catch(()=>{});},10000);
- setInterval(pull,2500);
+ setInterval(pull,2500);setInterval(refreshLeaderboard,12000);
 }
 init();
 })();
