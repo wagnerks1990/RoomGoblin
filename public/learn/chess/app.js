@@ -10,6 +10,24 @@
   if(response.status===401||response.status===403){closed=true;location.assign('/learn');throw Error('Teacher login required.');}
   const data=await response.json();if(!response.ok||data.ok===false)throw Error(data.error||'Chess request was not accepted.');return data;
  }
+ function renderLeaderboard(data){
+  const root=$('leaderboard');root.replaceChildren();
+  $('leaderboard-info').textContent=data.rules+' '+data.identity;
+  const table=el('table'),thead=el('thead'),head=el('tr');
+  for(const name of ['Rank','Player','Games','Wins','Losses','Draws','Win %','Practice'])head.append(el('th',name));
+  thead.append(head);table.append(thead);
+  const tbody=el('tbody');
+  for(const p of data.players){const tr=el('tr');if(p.me)tr.style.fontWeight='bold';
+   for(const value of [p.rank,p.label,p.games,p.wins,p.losses,p.draws,p.winRate+'%',p.practice])tr.append(el('td',value));
+   tbody.append(tr);}
+  table.append(tbody);root.append(table);
+  if(!data.players.length)root.append(el('p','No recorded games yet.'));
+ }
+ async function refreshLeaderboard(){
+  if(closed||document.hidden)return;
+  try{renderLeaderboard(await request('/teacher/chess/leaderboard'));}
+  catch(e){$('leaderboard-info').textContent='Leaderboard is unavailable: '+e.message;}
+ }
  const mine=m=>!!m.myColor;
  function drawBoard(m){
   const root=$('board');root.replaceChildren();const rows=m.fen.split(' ')[0].split('/').map(row=>row.replace(/[1-8]/g,n=>'.'.repeat(Number(n))));
@@ -73,7 +91,7 @@
    $('queue').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'multiplayer'});
    $('computer').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'computer'});
    $('solo').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'solo'});
-   await poll();setInterval(poll,3000);
+   await poll();await refreshLeaderboard();setInterval(poll,3000);setInterval(refreshLeaderboard,12000);
    setInterval(()=>{if(classId&&!closed&&!document.hidden)request('/teacher/classes/'+classId+'/chess/heartbeat','POST',{}).catch(()=>{});},10000);
   }catch(e){msg(e.message);}
  }
