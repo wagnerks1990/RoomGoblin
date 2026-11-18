@@ -161,10 +161,26 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const insights=require('./learning-insights').createInsights(platform);
   const direct=new(require('./learning-direct').LearningDirect)(learning);learning.direct=direct;
   const portal=new(require('./learning-teacher-portal').LearningTeacherPortal)(learning);learning.portal=portal;
+   const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
+  // Teacher-only monitoring UI. The student gateway deliberately does not serve this page.
+  if(publicDir)app.get(['/learn/chess','/learn/chess/'],(req,res)=>{
+    const user=requestUser(req);
+    if(isPublicRequest(req))return res.sendStatus(404);
+    if(!store.authEnabled()||!user||!teacher(user))return res.redirect(302,'/learn');
+    res.setHeader('Cache-Control','no-store');
+    res.sendFile(require('node:path').join(publicDir,'chess','index.html'));
+  });
+  if(publicDir)app.get('/learn/chess/app.js',(req,res)=>{
+    const user=requestUser(req);
+    if(isPublicRequest(req))return res.sendStatus(404);
+    if(!store.authEnabled()||!user||!teacher(user))return res.sendStatus(403);
+    res.setHeader('Cache-Control','no-store');
+    res.type('application/javascript').sendFile(require('node:path').join(publicDir,'chess','app.js'));
+  });
   // The single operator workspace is served directly, without a directory redirect.
   if(publicDir)app.get(['/learn','/learn/','/learn/index.html'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>isPublicRequest(req)?res.sendStatus(404):res.sendFile(require('node:path').join(publicDir,'index.html')));
   const requireLearning=(req,res,next)=>{const u=req.directLearner||requestUser(req);if(!store.authEnabled()||!u||isPublicRequest(req)&&!req.directLearner&&(!u.learningSso||u.profileId!=='learning-student'))return res.status(401).json({ok:false,error:isPublicRequest(req)?'Reopen the signed Schoology connection.':'Sign in to your assigned RoomGoblin account.'});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
@@ -240,6 +256,19 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     }next();
   });
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
+  // Teacher can monitor all chess sessions in their assigned class, but not another class.
+  app.get(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
+    learning.membership(req.learner,req.params.id,true);
+    const rows=learning.db.prepare('SELECT c.* FROM learning_chess_matches c JOIN learning_activities a ON a.id=c.activity_id WHERE a.class_id=? ORDER BY c.updated_at DESC LIMIT 200').all(req.params.id);
+    res.json({ok:true,matches:rows.map(row=>chess.render(row))});
+  }));
+  app.get(api+'/teacher/activities/:id/chess/matches/:matchId',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId,{teacher:true})})));
+  // Direct-SCORM participants are authenticated by the existing assignment-only bearer.
+  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,matches:chess.list(req.learner,req.params.id)})));
+  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id)})));
+  app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap((req,res)=>res.json({ok:true,match:chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
   app.get(api+'/teacher/classes',requireTeacher,wrap((req,res)=>res.json({ok:true,classes:portal.catalog(req.learner)})));
   app.post(api+'/teacher/classes/:id/assignments',requireTeacher,wrap((req,res)=>res.json({ok:true,id:portal.createAssignment(req.learner,req.params.id,req.body)})));
   app.put(api+'/teacher/connection-settings',requireAdministrator,wrap((req,res)=>{
