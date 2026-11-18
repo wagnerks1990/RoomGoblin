@@ -126,9 +126,17 @@ class ChessMatches {
    black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id===viewer.id?viewer.id:null,name:'Practice (Black)'}:m.black_id?{id:m.black_id===viewer.id?viewer.id:null,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
  }
  publicName(userId,activityId,role){
-  const parts=this.alias(userId,activityId).trim().replace(/\\s+/gu,' ').split(' ').filter(Boolean);
-  if(!parts.length)return role==='white'?'Player White':'Player Black';
-  return parts[0].slice(0,32)+(parts.length>1?' '+Array.from(parts.at(-1))[0].toUpperCase()+'.':'');
+  const display=this.alias(userId,activityId).trim();
+  // SCORM 1.2 commonly reports learner names as "Family, Given".
+  // Keep the original LMS attribution stored unchanged; normalize only the visible nickname.
+  const comma=display.indexOf(',');
+  const given=comma>=0?display.slice(comma+1).trim():display;
+  const family=comma>=0?display.slice(0,comma).trim():display;
+  const first=given.split(/\\s+/u).filter(Boolean)[0];
+  const surname=comma>=0?family.split(/\\s+/u).filter(Boolean)[0]:given.split(/\\s+/u).filter(Boolean).at(-1);
+  if(!first)return role==='white'?'Player White':'Player Black';
+  const initial=surname&&surname!==first?' '+Array.from(surname)[0].toUpperCase()+'.':'';
+  return first.slice(0,32)+initial;
  }
  seatClass(user,m){
   const activityId=m.white_id===user.id?m.activity_id:m.black_id===user.id?(m.black_activity_id||m.activity_id):null;
