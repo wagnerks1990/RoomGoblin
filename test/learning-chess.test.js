@@ -90,7 +90,7 @@ test('leaderboard includes authoritative checkmate and repetition draws without 
   assert.equal(finish('solo',mate).result,'black');
   const repeat=Array(4).fill(['g1f3','g8f6','f3g1','f6g8']).flat();
   assert.equal(finish('multiplayer',repeat).result,'draw');
-  const practice=c.create(f.a,id,{mode:'computer'});c.move(f.a,id,practice.id,'e2e4',0);
+  const practice=c.create(f.a,id,{mode:'computer'});await c.move(f.a,id,practice.id,'e2e4',0);
   const board=c.leaderboard(f.a,id),me=board.players.find(p=>p.me);
   assert.equal(me.games,2);assert.equal(me.losses,1);assert.equal(me.draws,1);assert.equal(me.winRate,0);
   assert.deepEqual(me.soloStats,{started:1,active:0,games:1,wins:0,losses:1,draws:0,stopped:0,winRate:0});
@@ -120,7 +120,7 @@ test('teacher monitoring masks full aliases outside assigned classes and page re
   let game=f.learning.chess.create(f.a,id);game=f.learning.chess.join(f.b,id,game.id);
   for(const move of ['f2f3','e7e5','g2g4','d8h4'])game=f.learning.chess.move(game.turn==='white'?f.a:f.b,id,game.id,move,game.revision);
   assert.equal(f.learning.chess.teacherList(teacher)[0].white.name,'Investigator A.');
-  assert.ok(f.learning.chess.leaderboard(teacher,null,{teacher:true}).players.every(p=>/^Player-[A-F0-9]{8}$/.test(p.label)));
+  assert.ok(f.learning.chess.leaderboard(teacher,null,{teacher:true}).players.every(p=>/^Investigator [AB]\.$/.test(p.label)));
   assert.throws(()=>f.learning.chess.teacherActivity(teacher,f.classId),{status:404});
   for(let i=0;i<120;i++)assert.equal((await f.request(f.admin,'/learn/chess/app.js')).status,200);
   const limited=await f.request(f.admin,'/learn/chess/app.js');assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
@@ -339,8 +339,8 @@ test('global leaderboard derives results once, separates practice, and masks oth
   assert.equal(winner.losses,0);assert.equal(winner.practice,0);
   assert.equal(loser.games,1);assert.equal(loser.losses,1);assert.equal(loser.wins,0);
   assert.equal(loser.practice,1);assert.equal(loser.computer,1);
-  assert.match(loser.label,/^Player-[A-F0-9]{8}$/);
-  assert.ok(!JSON.stringify(publicResult.body).includes('Investigator'));
+  assert.equal(loser.label,'Investigator A.');assert.match(loser.playerKey,/^Player-[A-F0-9]{8}$/);
+  assert.ok(!JSON.stringify(publicResult.body).includes('Investigator A\"'));
   assert.ok(!JSON.stringify(publicResult.body).includes(f.a.id));
   const teacherBoard=await f.request(f.admin,'/api/v1/learning/teacher/chess/leaderboard');
   assert.equal(teacherBoard.status,200);
@@ -351,7 +351,7 @@ test('global leaderboard derives results once, separates practice, and masks oth
  }finally{await f.close();}
 });
 
-test('leaderboard excludes cancelled queues and unplayed forfeits',async()=>{
+test('leaderboard excludes cancelled queues',async()=>{
  const f=await fixture();
  try{
   const a=f.learning.createActivity(f.admin,f.classId,{title:'Chess queue only',templateId:'scorm-connector-v1'});

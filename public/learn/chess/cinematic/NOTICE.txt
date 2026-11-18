@@ -1,0 +1,11 @@
+RoomGoblin cinematic chess prototype
+
+Three.js 0.187.0 is bundled locally in view.mjs under the MIT License.
+Copyright and complete terms are retained in THREE-LICENSE.txt.
+Upstream: https://github.com/mrdoob/three.js/tree/r187
+
+The procedural board, silhouettes and movement presentation in source.mjs were
+created for RoomGoblin. No external models, textures, fonts, movie artwork,
+characters, music or proprietary Wizarding World assets are included.
+
+This optional visual renderer does not determine move legality or game outcomes.

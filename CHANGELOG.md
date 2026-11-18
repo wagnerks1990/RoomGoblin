@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Improve Chess Arena with mouse/touch dragging, player orientation, board sizing,
+  multiple saved games, server clocks, draw claims/agreements and bounded computer
+  difficulty levels. Add distinct checkmate/forfeit/timeout and move-average stats,
+  first-name/last-initial standings, an auto-updating local HTML TV page and optional
+  original animated stone warriors. Preserve assignment isolation and document
+  remaining dead-position, live LMS and classroom GPU acceptance limitations.
+
 - Add draft Chess Arena with universal SCORM matchmaking, native teacher monitoring
   and play, server-authoritative multiplayer standings, independent computer/solo
   results and passwordless reported-name enrollment. Keep assignment bearer scope,

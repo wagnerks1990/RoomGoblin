@@ -66,13 +66,20 @@ Preserve SQLite identity, writer drain, export freezes, backups and rollback.
 Synthetic validation does not establish real LMS policy, grading calibration or
 physical classroom acceptance.
 
-## Chess Arena (draft)
+## Chess Arena
 
-The unmerged Chess Arena prototype adds `/learn/chess` for native teachers and
+Chess Arena provides `/learn/chess` for native teachers and
 an exported SCORM student game. Packages share an instance-wide multiplayer queue
 and account leaderboard. Legal moves/results are server-owned; computer and solo
 statistics are separate. Reported LMS names enroll automatically without a student
 password, but are unverified and never merge private accounts. Cross-class public
-rankings use opaque labels; full names require teacher membership in that class.
+rankings show first name and last initial; full names require teacher membership in that class.
 Student access stays on the isolated gateway. See
 [Chess Arena](../docs/CHESS-ARENA.md) for scope, tests and remaining acceptance.
+
+Interaction enhancements add dragging/touch, own-side orientation, multiple saved
+games, server clocks, draw claims and agreements, computer levels, separate outcome
+statistics and optional original 3D stone warriors. The local HTML TV leaderboard
+at `/chess/leaderboard` updates automatically without exposing private records.
+Fresh ZIP exports require the matching backend. Classroom GPU and real Schoology
+gradebook acceptance remain pending.
