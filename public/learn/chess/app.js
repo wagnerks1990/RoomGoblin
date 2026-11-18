@@ -48,8 +48,10 @@
   if(active){
    $('game-title').textContent=active.white.name+' (White) vs '+(active.black?.name||'Waiting')+' (Black) · '+(active.status==='finished'?(active.result+' '+active.reason):(active.turn+' to move'))+(mine(active)?' · You are '+active.myColor:' · Spectating');
    drawBoard(active);
+   $('leave').disabled=!mine(active)||active.status==='finished';
+   $('leave').onclick=()=>mutate('/teacher/classes/'+(active.seatClassId||classId)+'/chess/matches/'+active.id+'/leave',{revision:active.revision});
    $('moves').textContent=active.moves.map((move,i)=>(i%2===0?Math.floor(i/2)+1+'. ':'')+move).join(' ');
-  }else{$('game-title').textContent='Select a match to play or spectate.';$('board').replaceChildren();$('moves').textContent='';}
+  }else{$('game-title').textContent='Select a match to play or spectate.';$('board').replaceChildren();$('moves').textContent='';$('leave').disabled=true;}
   const people=$('people');people.replaceChildren();if(!data.connected.length)people.append(el('p','No recent connections.'));
   for(const person of data.connected)people.append(el('p',person.name+' · '+Math.max(0,Math.round((Date.now()-person.lastSeen)/1000))+' seconds ago'));
  }
