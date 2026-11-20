@@ -1,6 +1,7 @@
 ## RoomGoblin
 
 - [Home](Home)
+- [Chess Arena and teaching](Chess-Arena)
 - [Brand and Compatibility](RoomGoblin-Brand-and-Compatibility)
 - [Operator Workspaces](GUI-Workspaces)
 - [Architecture](Architecture)

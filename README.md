@@ -1,5 +1,7 @@
 Chess Arena: [SCORM play, teacher monitoring and TV standings](docs/CHESS-ARENA.md). Reported Schoology names enroll without a separate password. Teacher workspace: `/learn/chess`; local TV page: `/chess/leaderboard`. Interactive boards, clocks, multiple saved games and optional stone-warrior graphics require the matching backend and freshly exported ZIP. Live Schoology and classroom GPU acceptance remain pending.
 
+Chess teaching adds offline piece guides, lessons and independent practice questions, with requested explanations restricted to owned solo/computer games. Multiplayer receives no position-specific hints. See [teaching and fair-play boundaries](docs/CHESS-TEACHING.md) and [realistic character asset research](docs/CHESS-REALISM-ASSETS.md). The wider curriculum is a plan; no title, rating or learning outcome is promised. The optional cinematic cast includes a documented CC0 head derivative, original armor and horse/fortress forms; further realistic models remain research candidates.
+
 # RoomGoblin
 
 [Discussion reliability](docs/LEARNING-DISCUSSION-RELIABILITY.md) documents SCORM

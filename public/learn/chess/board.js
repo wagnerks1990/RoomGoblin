@@ -10,16 +10,17 @@
  const make=(tag,text)=>{const n=document.createElement(tag);n.textContent=String(text??'');return n;};
  const number=n=>Number.isFinite(Number(n))?Number(n):0;
  const average=n=>n===null||n===undefined?'—':number(n).toFixed(1);
- const resultText=m=>m.status!=='finished'?'':!m.result?'GAME CLOSED · '+m.reason:m.result==='draw'?'DRAW · '+m.reason:(m.reason==='checkmate'?'CHECKMATE · ':['resignation','forfeit'].includes(m.reason)?'FORFEIT · ':m.reason==='timeout'?'TIME OUT · ':'')+(m.result==='white'?'White':'Black')+' wins';
+ let activeConfirmation=null,confirmationId=0;const leaderboardCache=new WeakMap(),drawCache=new WeakMap();
+ const resultText=m=>m.status!=='finished'?'':m.reason==='queue expired'?'WAITING REQUEST EXPIRED · Start a new queue':m.reason==='queue cancelled'?'QUEUE CANCELLED':m.reason==='practice ended'?'PRACTICE ENDED':!m.result?'GAME CLOSED · '+m.reason:m.result==='draw'?'DRAW · '+m.reason:(m.reason==='checkmate'?'CHECKMATE · ':['resignation','forfeit'].includes(m.reason)?'FORFEIT · ':m.reason==='timeout'?'TIME OUT · ':'')+(m.result==='white'?'White':'Black')+' wins';
  class Board{
   constructor(root,{onMove,topPlayer,bottomPlayer,status,promotion,onViewChange}={}){
    Object.assign(this,{root,onMove,topPlayer,bottomPlayer,status,promotion,onViewChange});
-   this.alive=true;this.epoch=0;this.cinematicMode=false;this.clockReceived=0;this.clockSource=null;
+   this.alive=true;this.epoch=0;this.cinematicMode=false;this.battleCamera=false;this.fastAnimations=false;this.clockReceived=0;this.clockSource=null;
    this.view='auto';this.selected='';this.cells=new Map();this.effects=true;this.sound=false;this.timers=new Set();
    root.classList.add('rg-chess-board');root.setAttribute('role','group');root.setAttribute('aria-label','Interactive chessboard');
    root.replaceChildren();
    for(const square of coords){
-    const cell=document.createElement('button');cell.type='button';cell.dataset.square=square;cell.className='sq';
+    const cell=document.createElement('button');cell.type='button';cell.dataset.square=square;cell.className='sq';cell.tabIndex=-1;cell.setAttribute('aria-disabled','true');
     const piece=document.createElement('span');piece.className='piece';piece.setAttribute('aria-hidden','true');cell.append(piece);
     const label=document.createElement('span');label.className='coordinate';label.setAttribute('aria-hidden','true');cell.append(label);
     this.cells.set(square,cell);root.append(cell);
@@ -30,18 +31,22 @@
    root.addEventListener('pointerup',e=>this.up(e));
    root.addEventListener('pointercancel',()=>this.cancelDrag());
    root.addEventListener('lostpointercapture',e=>{if(e.target===root)this.cancelDrag();});
+   root.addEventListener('focusin',e=>{const square=e.target.closest('[data-square]')?.dataset.square;if(square){this.focusSquare=square;for(const [id,cell]of this.cells)cell.tabIndex=id===square?0:-1;}});
    root.addEventListener('keydown',e=>{
     if(e.key==='Escape'){this.selected='';this.paintSelection();this.cancelDrag();return;}
-    const delta={ArrowLeft:-1,ArrowRight:1,ArrowUp:-8,ArrowDown:8}[e.key];if(!delta)return;
-    e.preventDefault();const cells=[...root.children],i=cells.indexOf(e.target.closest('[data-square]'));cells[Math.max(0,Math.min(63,i+delta))]?.focus();
+    const cells=[...root.children],index=cells.indexOf(e.target.closest('[data-square]'));if(index<0)return;
+    const row=Math.floor(index/8),col=index%8;let next=index;
+    if(e.key==='ArrowLeft')next=row*8+Math.max(0,col-1);else if(e.key==='ArrowRight')next=row*8+Math.min(7,col+1);else if(e.key==='ArrowUp')next=Math.max(0,row-1)*8+col;else if(e.key==='ArrowDown')next=Math.min(7,row+1)*8+col;else if(e.key==='Home')next=e.ctrlKey?0:row*8;else if(e.key==='End')next=e.ctrlKey?63:row*8+7;else return;
+    e.preventDefault();cells[next]?.focus();
    });
    this.onBlur=()=>this.cancelDrag();window.addEventListener('blur',this.onBlur);
    this.clockTimer=setInterval(()=>this.paintClocks(),100);
-   this.notice=make('p','');this.notice.className='cinema-notice';this.notice.setAttribute('role','status');root.after(this.notice);
+   this.notice=make('p','');this.notice.className='cinema-notice';this.notice.setAttribute('role','status');root.after(this.notice);this.keyHelp=make('p','Keyboard: arrow keys move between squares; Enter or Space selects. Home/End moves along a row; Escape clears selection.');this.keyHelp.className='chess-key-help';root.after(this.keyHelp);
   }
   orientation(){return this.view==='auto'?(this.match?.mode==='solo'?this.match.turn:this.match?.myColor||'white'):this.view;}
   flip(){this.view=this.orientation()==='white'?'black':'white';if(this.match)this.update(this.match,this.options);}
   resetView(){this.view='auto';if(this.match)this.update(this.match,this.options);}
+  setCinemaOptions({battleCamera=this.battleCamera,fast=this.fastAnimations}={}){this.battleCamera=!!battleCamera;this.fastAnimations=!!fast;this.paintCinema();}
   setEffects(enabled){this.effects=enabled;this.root.classList.toggle('effects-off',!enabled);if(this.match)this.paintCinema();}
   setSound(enabled){
    this.sound=enabled;
@@ -62,9 +67,11 @@
    this.canMove=!!match.myColor&&match.status==='active'&&(match.mode==='solo'||match.turn===match.myColor)&&!options.disabled&&!this.pending;
    const orientation=this.orientation();this.root.dataset.orientation=orientation;
    this.root.classList.toggle('is-interactive',this.canMove);this.root.classList.toggle('in-check',!!match.inCheck&&match.status==='active');this.root.classList.toggle('is-checkmate',match.reason==='checkmate');
-   this.root.setAttribute('aria-busy',String(!!this.pending));
+   this.root.setAttribute('aria-busy',String(!!this.pending));this.root.dataset.sync=options.reconnecting?'reconnecting':'live';
    const order=orientation==='black'?[...coords].reverse():coords;
-   if(this.drawnOrientation!==orientation){for(const square of order)this.root.append(this.cells.get(square));this.drawnOrientation=orientation;}
+   const focusedSquare=this.root.contains(document.activeElement)?document.activeElement.closest('[data-square]')?.dataset.square:null;
+   if(this.drawnOrientation!==orientation){for(const square of order)this.root.append(this.cells.get(square));this.drawnOrientation=orientation;if(focusedSquare)this.cells.get(focusedSquare)?.focus({preventScroll:true});}
+   this.focusSquare??=match.myColor==='black'?'e7':'e2';for(const [square,cell]of this.cells)cell.tabIndex=square===this.focusSquare?0:-1;
    const last=match.moves.at(-1)||'';
    for(const [i,square] of coords.entries()){
     const cell=this.cells.get(square),piece=this.position[i],pieceNode=cell.querySelector('.piece');
@@ -79,7 +86,7 @@
     cell.querySelector('.coordinate').textContent=(left?square[1]:'')+(bottom?square[0]:'');
    }
    this.paintSelection();this.player(this.topPlayer,orientation==='white'?'black':'white');this.player(this.bottomPlayer,orientation);
-   if(this.status){this.status.dataset.state=match.status==='finished'?match.reason:match.inCheck?'check':this.canMove?'your-turn':'waiting';this.status.textContent=match.status==='finished'?resultText(match):this.pending?'Sending your move…':options.disabled?(options.reason||'Read-only view'):match.status==='waiting'?'Finding your opponent…':(this.canMove?'Your turn — ':match.myColor?'Opponent’s turn — ':'Watching — ')+(match.turn==='white'?'White':'Black')+(match.inCheck?' · CHECK!':'');}
+   if(this.status){this.status.dataset.state=match.status==='finished'?match.reason:match.inCheck?'check':this.canMove?'your-turn':'waiting';this.status.textContent=match.status==='finished'?resultText(match):this.pending?'Sending your move…':options.disabled?(options.reason||'Read-only view'):match.status==='waiting'?(match.myColor?'Finding your opponent…':'Waiting for a player · Watch or join this game.'):(this.canMove?'Your turn — ':match.myColor?'Opponent’s turn — ':'Watching — ')+(match.turn==='white'?'White':'Black')+(match.inCheck?' · CHECK!':'');}
    this.paintClocks();this.paintCinema();
    if(changed&&!newGame&&match.moves.length>previous.moves.length&&match.moves.length-previous.moves.length<=2){
     const old=pieces(previous.fen),capture=old.filter(p=>p!=='.').length>this.position.filter(p=>p!=='.').length;
@@ -102,7 +109,7 @@
   }
   paintSelection(){
    const targets=new Set([...this.moves].filter(m=>m.startsWith(this.selected)&&this.selected).map(m=>m.slice(2,4)));
-   for(const [square,cell] of this.cells){cell.classList.toggle('selected',square===this.selected);cell.classList.toggle('legal-target',this.canMove&&targets.has(square));}
+   for(const [square,cell] of this.cells){cell.classList.toggle('selected',square===this.selected);cell.setAttribute('aria-pressed',String(square===this.selected));cell.setAttribute('aria-description',this.canMove&&targets.has(square)?'Legal destination for the selected piece.':'');cell.classList.toggle('legal-target',this.canMove&&targets.has(square));}
    this.paintCinema();
   }
   own(square){const p=this.position?.[coords.indexOf(square)];return color(p)===this.match?.turn;}
@@ -157,7 +164,7 @@
   paintClocks(){
    const clock=this.clockSource;if(!clock||!this.match)return;
    const elapsed=Math.max(0,performance.now()-this.clockReceived);
-   for(const node of [this.topPlayer,this.bottomPlayer]){const time=node?.querySelector('.chess-clock');if(!time)continue;const side=time.dataset.side,remaining=Math.max(0,Number(clock[side])-(clock.running===side?elapsed:0));const seconds=Math.ceil(remaining/1000),text=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');const awaiting=remaining===0&&this.match.status==='active'&&clock.running===side,display=clock.unavailable?'Clock temporarily unavailable — awaiting server':awaiting?'0:00 · Awaiting server':text;if(time.textContent!==display)time.textContent=display;time.classList.toggle('awaiting-server',!!clock.unavailable||awaiting);time.classList.toggle('running',clock.running===side);time.classList.toggle('low',clock.running===side&&remaining<30000);time.setAttribute('aria-label',side+' '+display);}
+   for(const node of [this.topPlayer,this.bottomPlayer]){const time=node?.querySelector('.chess-clock');if(!time)continue;const side=time.dataset.side,remaining=Math.max(0,Number(clock[side])-(clock.running===side?elapsed:0));const seconds=Math.ceil(remaining/1000),text=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');const awaiting=remaining===0&&this.match.status==='active'&&clock.running===side,display=clock.unavailable?'Clock temporarily unavailable — awaiting server':awaiting?'0:00 · Awaiting server':text;if(time.textContent!==display)time.textContent=display;time.classList.toggle('awaiting-server',!!clock.unavailable||awaiting);time.classList.toggle('running',clock.running===side);time.classList.toggle('low',clock.running===side&&remaining<30000);time.setAttribute('aria-label',side+' '+display+(this.options?.reconnecting?' · local estimate while reconnecting':''));time.title=this.options?.reconnecting?'Local estimate while reconnecting; the server confirms clock results.':'Server clock with a local countdown estimate.';}
   }
   async setCinematic(enabled){
    this.cancelDrag();this.wantCinema=!!enabled;const epoch=++this.epoch;
@@ -179,23 +186,35 @@
   paintCinema(){
    if(!this.cinematicMode||!this.cinema||!this.match)return;
    const targets=[...new Set([...(this.moves||[])].filter(m=>this.selected&&m.startsWith(this.selected)).map(m=>m.slice(2,4)))];
-   try{this.cinema.update(this.match,{orientation:this.orientation(),effects:this.effects&&!reduced(),selected:this.selected,targets,disabled:!this.canMove});}catch{this.cinemaFailed();}
+   try{this.cinema.update(this.match,{orientation:this.orientation(),effects:this.effects&&!reduced(),battleCamera:this.battleCamera,fast:this.fastAnimations,selected:this.selected,targets,disabled:!this.canMove});}catch{this.cinemaFailed();}
   }
-  clear(){this.epoch++;this.wantCinema=false;this.cinema?.destroy();this.cinema=null;this.cinemaHost?.remove();this.cinemaHost=null;this.cinematicMode=false;this.root.parentElement.classList.remove('cinematic-mode');this.cancelDrag();this.match=null;this.clockSource=null;this.selected='';this.root.replaceChildren();this.cells.clear();this.topPlayer?.replaceChildren();this.bottomPlayer?.replaceChildren();this.notice.textContent='';this.onViewChange?.(false);}
+  clear(){this.epoch++;this.wantCinema=false;this.cinema?.destroy();this.cinema=null;this.cinemaHost?.remove();this.cinemaHost=null;this.cinematicMode=false;this.root.parentElement.classList.remove('cinematic-mode');this.cancelDrag();this.match=null;this.clockSource=null;this.selected='';this.focusSquare=null;this.root.replaceChildren();this.cells.clear();this.topPlayer?.replaceChildren();this.bottomPlayer?.replaceChildren();this.notice.textContent='';this.keyHelp.textContent='';this.onViewChange?.(false);}
   destroy(){this.alive=false;this.clear();clearInterval(this.clockTimer);for(const timer of this.timers)clearTimeout(timer);this.timers.clear();window.removeEventListener('blur',this.onBlur);this.audio?.close().catch(()=>{});}
 
  }
  window.RoomGoblinChessBoard=Board;
  window.RoomGoblinChessUI={resultText,
+  closeConfirmation(){activeConfirmation?.(false);},
+  leaveLabel(m){return m.status==='waiting'?'Cancel queue':m.mode==='multiplayer'?'Forfeit game':'Stop practice';},
+  confirmLeave(m){
+   if(!m||m.status==='finished'||activeConfirmation)return Promise.resolve(false);
+   const queue=m.status==='waiting',practice=m.mode!=='multiplayer',title=queue?'Cancel this queue?':practice?'Stop this practice game?':'Forfeit this game?',description=queue?'This removes your waiting slot. It does not count as a competitive game.':practice?'Stopping closes this practice game. Choose Keep practicing to leave it saved and resumable. Practice results stay separate from multiplayer.':'Forfeiting ends this game and records the server-confirmed result. Your opponent may receive a forfeit win. Choose Keep playing to leave the game saved.',cancel=queue?'Keep waiting':practice?'Keep practicing':'Keep playing';
+   return this.confirmAction({title,description,confirmLabel:this.leaveLabel(m),cancelLabel:cancel});
+  },
+  confirmQueueCleanup(m){if(!m?.canCancelQueue||!m.cleanupClassId||m.status!=='waiting')return Promise.resolve(false);return this.confirmAction({title:'Remove this waiting request?',description:'No game result is recorded. The student can queue again.',confirmLabel:'Remove waiting request',cancelLabel:'Keep waiting request'});},
+  confirmAction({title,description,confirmLabel,cancelLabel}){
+   if(activeConfirmation)return Promise.resolve(false);
+   return new Promise(resolve=>{const previous=document.activeElement,dialog=make('dialog',''),heading=make('h2',title),message=make('p',description),controls=make('div',''),back=make('button',cancelLabel),confirm=make('button',confirmLabel);const id='chess-confirm-'+(++confirmationId);heading.id=id;message.id=id+'-description';dialog.className='chess-confirm';dialog.setAttribute('aria-labelledby',id);dialog.setAttribute('aria-describedby',message.id);back.type=confirm.type='button';confirm.className='danger';controls.append(back,confirm);dialog.append(heading,message,controls);let done=false;const finish=choice=>{if(done)return;done=true;activeConfirmation=null;if(dialog.open)dialog.close();dialog.remove();if(previous?.isConnected&&!previous.disabled)previous.focus({preventScroll:true});else document.getElementById('refresh')?.focus({preventScroll:true});resolve(choice);};activeConfirmation=finish;back.onclick=()=>finish(false);confirm.onclick=()=>finish(true);dialog.addEventListener('cancel',e=>{e.preventDefault();finish(false);});document.body.append(dialog);if(dialog.showModal){dialog.showModal();back.focus();}else finish(window.confirm(title+' '+description));});
+  },
   requestId(){if(crypto.randomUUID)return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);},
-  gameSummary(m){return m.status==='finished'?resultText(m):m.status==='waiting'?'Waiting · '+(m.timeControl==='none'?'Untimed':m.timeControl):m.turn.toUpperCase()+' to move · '+(m.timeControl==='none'?'Untimed':m.timeControl)+(m.mode==='computer'?' · '+m.difficulty:'');},
+  gameSummary(m){return m.status==='finished'?resultText(m):m.status==='waiting'?'Waiting · '+(m.timeControl==='none'?'Untimed':m.timeControl):m.turn.toUpperCase()+' to move · '+(m[m.turn]?.name||m.turn)+' · '+(m.timeControl==='none'?'Untimed':m.timeControl)+(m.mode==='computer'?' · '+m.difficulty:'');},
   leaderboard(root,data,{practice=true}={}){
-   const signature=JSON.stringify(data.players);if(root.dataset.signature===signature)return;root.dataset.signature=signature;root.replaceChildren();
-   const table=make('table',''),head=make('tr','');const columns=['Rank','Player','Played','Total wins','Checkmate W','Forfeit W','Time W','Total losses','Checkmate L','Forfeit L','Time L','Draws','Win %','Avg game moves','Avg moves / win','Avg moves / mate','Fastest mate','Win streak','Best streak'];if(practice)columns.push('Computer W/L/D','Solo W/L/D');for(const title of columns){const th=make('th',title);th.scope='col';head.append(th);}const thead=make('thead','');thead.append(head);table.append(thead);const body=make('tbody','');
+   const signature=JSON.stringify(data.players);if(leaderboardCache.get(root)===signature&&root.firstElementChild)return;leaderboardCache.set(root,signature);root.replaceChildren();
+   const table=make('table',''),head=make('tr',''),caption=make('caption',"Multiplayer standings · W/L/D = wins/losses/draws · Own-move averages");table.append(caption);const columns=['Rank','Player','Played','Total wins','Checkmate W','Forfeit W','Time W','Total losses','Checkmate L','Forfeit L','Time L','Draws','Win %','Avg game moves','Avg moves / win','Avg moves / mate','Fastest mate','Win streak','Best streak'];if(practice)columns.push('Computer W/L/D','Solo W/L/D');for(const title of columns){const th=make('th',title);th.scope='col';head.append(th);}const thead=make('thead','');thead.append(head);table.append(thead);const body=make('tbody','');
    for(const p of data.players){const row=make('tr','');if(p.me)row.className='is-me';const values=[p.rank,p.label+(p.me?' · YOU':''),p.games,p.wins,p.mateWins||0,p.forfeitWins||0,p.timeoutWins||0,p.losses,p.mateLosses||0,p.forfeitLosses||0,p.timeoutLosses||0,p.draws,p.winRate+'%',average(p.avgGameMoves),average(p.avgMovesPerWin),average(p.avgMovesToMate),p.fastestMate??'—',p.currentWinStreak||0,p.bestWinStreak||0];if(practice)for(const key of ['computerStats','soloStats']){const stats=p[key]||{};values.push((stats.wins||0)+'/'+(stats.losses||0)+'/'+(stats.draws||0));}for(const value of values)row.append(make('td',value));body.append(row);}table.append(body);root.append(table);if(!data.players.length)root.append(make('p','Complete a game to start the leaderboard.'));
   },
   drawControls(root,m,{disabled=false,onAction}={}){
-   const signature=JSON.stringify([m?.id,m?.revision,m?.drawOffer,m?.drawClaims,m?.myColor,m?.turn,disabled]);if(root.dataset.signature===signature)return;root.dataset.signature=signature;root.replaceChildren();
+   const signature=JSON.stringify([m?.id,m?.revision,m?.drawOffer,m?.drawClaims,m?.myColor,m?.turn,disabled]);if(drawCache.get(root)===signature)return;drawCache.set(root,signature);root.replaceChildren();
    if(!m||m.status!=='active'||!m.myColor)return;
    const button=(label,body)=>{const b=make('button',label);b.type='button';b.disabled=disabled;b.onclick=()=>onAction({...body,revision:m.revision});root.append(b);return b;};
    if(m.mode==='multiplayer'&&m.moves.length>=2){if(m.drawOffer==='opponent'){root.append(make('span','Your opponent offered a draw.'));button('Accept draw',{action:'accept'});button('Decline draw',{action:'decline'});}else if(m.drawOffer==='you')root.append(make('span','Draw offered · waiting for your opponent.'));else button('Offer draw',{action:'offer'});}

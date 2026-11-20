@@ -115,8 +115,12 @@ or assets were reused. Its global input handlers, local rule authority, high
 pixel ratios and animation-delayed moves are not suitable RoomGoblin defaults.
 
 All reference projects are untrusted examples, not correctness/security proof.
-The only third-party implementation included in this prototype is the pinned,
-locally bundled Three.js renderer with its actual upstream MIT license.
+The earlier procedural prototype included only the pinned Three.js implementation.
+The separate cinematic-next experiment additionally derives CC0 head/neck geometry
+from the official MakeHuman basemesh with source/hash/license evidence. See the
+[cinematic implementation review](CHESS-CINEMATIC-REVIEW.md) for its changed forms,
+choreography, validation, integration requirements and limitations. It has not
+been integrated into the frozen teaching release by this experiment.
 
 ## Film reference and realistic art gap
 

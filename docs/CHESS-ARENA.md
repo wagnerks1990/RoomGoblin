@@ -24,6 +24,12 @@ private bearer scope. Both must retain access before matching or moving. Up to
 Untimed games do not expire through inactivity. Unique persisted creation request
 IDs make retries idempotent while allowing multiple games. Legacy clients retain
 resume behavior. Automatic matching uses recently connected waiting players.
+Unjoined multiplayer requests with zero moves automatically expire after 24 hours
+without either a queue update or an owner heartbeat for that assignment. The
+freeze-aware background sweep runs at most once per minute and retains the
+request as `queue expired`, with no win, loss or draw. Active untimed games never
+expire because a player is offline; expired requests can be replaced by creating
+a new game.
 Students can cancel queues, forfeit multiplayer or stop practice; normal chess
 endings also finish games.
 
@@ -36,6 +42,31 @@ charged from stored wall-clock anchors on restart; reliable system time matters.
 Beginner, Standard and Advanced computer levels use bounded worker-thread search,
 not rated strength claims. Participation grading remains five validated player
 moves at four points each, capped at 20; winning is never required.
+
+## Teaching and practice explanations
+
+The teaching companion includes six piece guides, five lesson stages (basics,
+safety, tactics, strategy and endgames), fourteen independent practice questions
+and explanations for answers. Lessons are bundled locally in teacher/SCO assets;
+quiz progress is an in-memory learning aid, not an assignment grade or verified
+mastery record. See [the curriculum and fair-play contract](CHESS-TEACHING.md).
+
+**Explain practice position** requests at most three legal examples with factual
+reasons from the saved server position. It is available only in the learner's own
+active solo/computer practice; computer games require the human turn. The endpoint
+checks original assignment scope, current revision, enabled/revoked seats and
+assignment availability. All multiplayer hints are denied, including teacher
+participants and spectators. Requests are bounded to 12 per learner per minute
+across games, with a bounded in-memory limiter. No move, clock, participation
+score, attendance or standings changes result from a hint. These explanations
+neither rank the best moves nor predict who will win.
+
+Teaching additions require a matching backend and a freshly exported ZIP. The
+broader beginner-to-advanced curriculum remains a design plan; no rating, title
+or educational improvement is guaranteed. [Realistic character asset research](CHESS-REALISM-ASSETS.md)
+identifies possible future models/animations and their limitations. Detailed
+third-party character archives have not been imported or verified. The current
+original 3D cast remains a prototype with classroom GPU acceptance pending.
 
 ## Rules and statistics
 
@@ -77,8 +108,10 @@ are distributed.
 
 ## Validation and release
 
-Run `npm run check`, `node --test test/learning-chess*.test.js`, both chess browser
-smoke scripts and direct-assignment browser regressions. Browser scripts use
+Run `npm run check`, `node --test test/learning-chess*.test.js`, the browser scripts
+`test/browser/learning-chess-smoke.cjs`,
+`test/browser/learning-chess-interaction-smoke.cjs` and
+`test/browser/learning-chess-coach-smoke.cjs`, plus direct-assignment regressions. Browser scripts use
 separately installed Playwright/local Edge, not a new application dependency.
 On Windows run `py -3.11 C:/ChatGPT/Workspace/Tools/RoomGoblin-LinuxTests.py` from
 the actual worktree for the full native Linux suite.

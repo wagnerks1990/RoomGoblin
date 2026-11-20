@@ -276,7 +276,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
   // The chess queue is global, while each move uses the caller's own assignment.
   app.get(api+'/teacher/chess/leaderboard',requireTeacher,wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,null,{teacher:true})})));
-  app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>res.json({ok:true,matches:chess.teacherList(req.learner),connected:chess.connected(req.learner)})));
+  app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>{const matches=chess.teacherList(req.learner),totals=chess.teacherTotals(req.learner);res.json({ok:true,matches,connected:chess.connected(req.learner),totals,history:{limit:100,returned:matches.filter(m=>m.status==='finished').length,total:totals.finished}});}));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/cancel-queue',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.cancelQueue(req.learner,req.params.id,req.params.matchId,req.body)})));
   app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
     res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty||'beginner',timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
@@ -299,6 +300,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   }));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/draw',requireTeacher,wrap((req,res)=>{const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);res.json({ok:true,match:chess.draw(req.learner,activityId,req.params.matchId,req.body,{teacher:true})});}));
   app.post(api+'/activities/:id/chess/matches/:matchId/draw',wrap((req,res)=>res.json({ok:true,match:chess.draw(req.learner,req.params.id,req.params.matchId,req.body)})));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/hint',requireTeacher,wrap((req,res)=>{const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);res.json({ok:true,...chess.hint(req.learner,activityId,req.params.matchId,req.body,{teacher:true})});}));
+  app.post(api+'/activities/:id/chess/matches/:matchId/hint',wrap((req,res)=>res.json({ok:true,...chess.hint(req.learner,req.params.id,req.params.matchId,req.body)})));
   // SCORM authentication still uses each package's own scoped bearer.
   app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));

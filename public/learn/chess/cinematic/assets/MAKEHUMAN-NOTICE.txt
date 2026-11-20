@@ -1,0 +1,22 @@
+MakeHuman hm08 head/neck derivative — CC0 1.0 Universal
+
+Source: MakeHuman Community, makehuman/data/3dobjs/base.obj
+https://github.com/makehumancommunity/makehuman/blob/master/makehuman/data/3dobjs/base.obj
+The identifier above is the Git blob identifier, not a repository commit;
+canonical blob download: https://api.github.com/repos/makehumancommunity/makehuman/git/blobs/d26635e9326e3cca30778fd7b9c00062b03cce09
+Original file SHA-256: 8e761e6624b8f54536409135d1636da63b32486a90d4897f84e121d144f6fb4c
+Retrieved: 2026-11-18
+
+The asset's own header explicitly releases it as CC0 (September 2020), naming:
+Copyright (C) 2020 Data Collection AB, Joel Palmius, Jonas Hauquier.
+Full CC0 text is included in MAKEHUMAN-CC0.txt. No affiliation is implied.
+
+Changes: selected only triangles in the 'body' group with every vertex above
+Y=5.85; triangulated quads; reindexed; scaled by 0.12, moved neck origin to Y=0,
+reversed Z/winding for RoomGoblin's forward direction and rounded positions to 5 decimals.
+The derived head/neck has 4,286 vertices and 8,524 triangles. No unclothed torso,
+other body geometry, software code, community add-on, texture or animation was
+imported. Armor, accessories, joint rigs and cinematic motion are original.
+
+These CC0 graphics may be redistributed in source and self-contained SCORM.
+MakeHuman application code is separately AGPL and is not included here.
