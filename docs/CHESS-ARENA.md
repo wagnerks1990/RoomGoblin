@@ -104,13 +104,33 @@ freeze-aware chess maintenance timer. Historical computer games with unknown
 assistance cannot estimate strength. This is adaptive selection, not online
 neural-network retraining. See [adaptive design](CHESS-ADAPTIVE-BOTS-RESEARCH.md).
 
-Six original guided drills validate attempts on the server and save private,
+Thirty-two original guided drills validate attempts on the server and save private,
 assistance-aware progress. Their start/attempt/hint routes use revisions and
 request IDs, scoped private bearers, availability checks and transactional audit.
 They never change live matches or grades. Local Square finder practice adds
 untimed or 30/60-second coordinate rounds without persistent scoring or network
 calls. See [practice lifecycle](CHESS-VISION-PRACTICE.md) and the
 [implementation status](CHESS-ROADMAP-STATUS.md).
+
+Searchable drills cover movement, king safety, tactics and basic endgames, including
+a branching opening exercise. Private spaced review and teacher-assigned sequences
+retain independent/assisted distinctions. An optional four-position starting-point
+check offers an explained practice suggestion, not a rating or grade. Teacher
+concept aggregates require five contributors. See [learning paths](CHESS-LEARNING-PATHS.md)
+and [starting-point checks](CHESS-STARTING-POINT.md).
+
+Teacher [studies](CHESS-STUDIES.md) provide validated positions, private saved
+learner branches/notes, collection labels and completed-game feedback. Explicit
+live demonstration following uses a separate board; temporary control grants
+permit one legal move and expire or can be revoked. Mainline PGN import verifies
+legal SAN and creates a final-position study; unsupported variations are rejected.
+Source updates never silently replace private branches.
+
+Finished-game history, replay, privacy-safe PGN export and bounded saved engine
+review remain separate from live play. Rematches/invitation codes require consent;
+class events and daily/survival puzzle runs keep byes and assisted practice separate
+from competitive wins and grades. These source features are not a deployment or
+live Schoology acceptance claim; consult the implementation status above.
 
 The teaching companion includes six piece guides, five lesson stages (basics,
 safety, tactics, strategy and endgames), fourteen independent practice questions
@@ -129,7 +149,7 @@ score, attendance or standings changes result from a hint. These explanations
 neither rank the best moves nor predict who will win.
 
 Teaching additions require a matching backend and a freshly exported ZIP. The
-broader beginner-to-advanced curriculum remains a design plan; no rating, title
+bank covers selected foundation/developing concepts, not a complete advanced curriculum; no rating, title
 or educational improvement is guaranteed. [Realistic character asset research](CHESS-REALISM-ASSETS.md)
 identifies possible future models/animations and their limitations. Detailed
 third-party character archives have not been imported or verified. The current

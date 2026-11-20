@@ -87,6 +87,16 @@ const AdmZip=require('adm-zip'),path=require('node:path');
   await ui.locator('#cinematic').click();await ui.locator('#board.is-interactive').waitFor({state:'visible'});
   assert.equal(await ui.locator('#cinematic').getAttribute('aria-pressed'),'false');assert.deepEqual(errors,[]);
   pass('Returning to 2D preserves playable state without browser errors or additional submissions');
+  await ui.locator('#computer-color').selectOption('black');await ui.locator('#computer').click();
+  await ui.locator('#player-bottom[data-color="black"]').waitFor();await ui.locator('#board.is-interactive').waitFor();
+  const black=f.store.db.prepare("SELECT id,revision,moves_json FROM learning_chess_matches WHERE mode='computer' AND human_color='black'").get();
+  assert.equal(JSON.parse(black.moves_json).length,1);assert.match(await ui.locator('#player-top').textContent(),/COMPUTER/);assert.match(await ui.locator('#player-bottom').textContent(),/YOU/);assert.equal(await ui.locator('#grade').textContent(),'1 / 5 moves');
+  pass('Black-side practice starts with a legal computer opening, correct player labels and no learner move credit');
+  await ui.locator('#cinematic').click();await ui.locator('#cinematic[aria-pressed="true"]').waitFor();await frame.evaluate(()=>{presented=[];});
+  await clickSquare('e7');await clickSquare('e5');await frame.waitForFunction(()=>presented.length===2&&!testCinema.animation&&!testCinema.presentationQueue,{},{timeout:25000});
+  const blackMoves=JSON.parse(f.store.db.prepare('SELECT moves_json FROM learning_chess_matches WHERE id=?').get(black.id).moves_json);assert.equal(blackMoves.length,3);assert.equal(blackMoves[1],'e7e5');assert.deepEqual(await frame.evaluate(()=>presented),blackMoves.slice(1));
+  await page.waitForFunction(()=>Number(values['cmi.core.score.raw'])===40);assert.equal(await ui.locator('#grade').textContent(),'2 / 5 moves');assert.deepEqual(errors,[]);
+  pass('Black human and white computer animate in order and only the human move earns participation credit');
   console.log(JSON.stringify({passed:checks.length,failed:0,skipped:0}));
  }finally{
   await browser.close();for(const server of [lms,proxy,gateway])if(server)await new Promise(r=>server.close(r));await f.close();

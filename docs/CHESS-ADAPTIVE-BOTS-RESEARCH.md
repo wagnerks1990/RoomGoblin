@@ -173,3 +173,19 @@ with peak sampled individual-process RSS 152788 KiB and maximum observed process
 CPU ticks 113. These are local observations, not production capacity guarantees.
 The container image and actual appliance still require acceptance. No student
 dataset is exported or used for neural-network training by this adapter.
+
+## Original selectable practice personalities
+
+New adaptive computer games may save Dynamic (existing learned style), Guardian
+(solid), Explorer (exploratory), or Challenger (attacking). These are original
+style preferences, not characters copied from another game or additional rating
+levels. Fixed difficulty modes reject non-Dynamic personality requests. Existing
+saved games default to Dynamic, and legacy default request fingerprints remain
+unchanged. White and Black creation both preserve the selected preference.
+
+Realtime adaptive modes may still override the preferred style for the current
+position as disclosed above; Adaptive Practice retains its selected preference
+throughout the game. All personality choices use the existing legal MultiPV
+candidate, 35-centipawn and mate-preservation limits. The completed-review service
+now supplies separate private recurring practice suggestions from structured
+review evidence; it does not retrain Stockfish or silently alter fixed strength.

@@ -1,47 +1,54 @@
 # Chess roadmap implementation status
 
-This checklist separates implemented source from release acceptance. It does not
-declare the complete Chess.com research inventory implemented. All content and
-drills are original; no Chess.com accounts, telemetry or assets are required.
+## Deployed baseline
 
-## Current development release
+PR #407 (9860a9d) delivered adaptive/fixed engines, six guided drills, coordinate
+practice, adjustable 3D cameras, computer-pair animation and single premoves.
+The next source changes below are not deployed until their release checks and
+native appliance verification are recorded.
 
-* Adjustable 3D camera presets, orbit, tilt and zoom.
-* Confirmed two-ply computer animation, castling rook animation and cancellation.
-* One local, legally revalidated multiplayer premove.
-* Six server-owned guided drills, progressive hints and private saved progress.
-* Local untimed/timed coordinate practice with accessible input and pause.
-* Fixed native computer challenge ladder, preserving legacy saved difficulty IDs.
-* Default Adaptive computer play, position-dependent challenge/style selection.
-* Adaptive Coach and private progress-informed lesson recommendations.
-* Bounded shared game-pattern adaptation without exposing cross-class profiles.
+## Roadmap implementation in this branch
 
-The working-tree implementation requires combined regression, actual engine,
-exported-package/browser, security and release checks. A committed or merged
-change is not automatically deployed. Actual Schoology launch, saved identity,
-resume and grade acceptance remain distinct from synthetic tests.
+- Complete authorized history pagination/filtering, SAN replay and privacy-safe PGN export.
+- Finished-only engine explanations, saved batched evaluation evidence, accessible
+  graphs, notable moments, isolated legal retries and explained practice suggestions.
+- White or Black computer play with preserved legacy owners, moves, clocks and grades.
+- Thirty-two original drills, search/topic/level filters, per-concept practice
+  evidence, spaced review, a branching opening exercise, daily suggestions and
+  teacher-assigned sequences with private assistance-aware reports.
+- Teacher-authored validated positions, private saved student branches/notes and
+  collection labels, with private feedback on completed games.
+- Explicit live demonstration following on a separate board, expiring/revocable
+  one-move learner control and bounded teacher roster pagination. Source changes
+  preserve private branches until an explicit reset.
+- Legally verified PGN mainline final-position study import (unsupported variations
+  rejected), and private class concept summaries with a five-contributor threshold.
+- Optional four-position starting-point checks with private saved summaries,
+  independent/assisted/skipped outcomes and explained learner-chosen practice paths.
+- Explicit rematches and private expiring invitation codes with clock preview.
+- Class-local consent-based Swiss-style events, balanced pairings, separate byes,
+  optional team score overlays and preserved playable games after event closure.
+- Teacher-authored daily puzzle runs and untimed survival practice, authoritative
+  deadlines and independent/assisted results separate from grades and chess wins.
+- Original stone/moonlit/bronze themes, improved sculpted details, grounded stepping,
+  paired weapon contact and user-camera precedence over optional battle shots.
 
-## Remaining research inventory
+## Work still in progress or requiring acceptance
 
-The broader [teaching roadmap](CHESS-COM-FEATURE-ROADMAP.md) and
-[gameplay inventory](CHESS-COM-PLAY-FEATURES-RESEARCH.md) remain the source for
-subsequent work: completed-game analysis and retry, richer skill diagnostics,
-larger authored lesson/puzzle sets, spaced practice, opening/endgame study,
-teacher assignment/reporting tools, tournaments and optional engagement features.
-These require their own implementation and acceptance; do not advertise them as
-available merely because this research is checked into the repository.
+- Combined Linux/browser/security/regression checks, checked PR publication, exact
+  image deployment and matching SCORM delivery are release work, not implied by
+  source implementation or individual feature tests.
+- Actual Schoology launch/resume/grade acceptance needs a permitted test attempt.
+- Physical school-device touch/GPU and actual screen-reader acceptance remain
+  separate from headless browser and automated keyboard checks.
+- The 3D cast remains stylized original art; procedural detail and choreography do
+  not establish film-quality realism. No movie models, footage or audio are copied.
+- Adaptation is bounded engine/statistical selection. Online neural-network
+  retraining, certified Elo, arbitrary variants and public social networking are
+  not implemented by this release.
 
-## Adaptive scope
-
-Adaptation selects from bounded server-owned engine settings and evaluated legal
-moves. It is not continuous neural-network retraining or certified Elo. New
-completed games supply private summary evidence; the current position can alter
-the next reply. Unknown historical assistance, hints, forfeits and interrupted
-games must not masquerade as independent strength evidence. Match outcomes and
-multiplayer standings remain authoritative and separate.
-
-The initial learning windows are deliberately finite. Identifiers are private,
-reported LMS names never merge identities, and account/assignment deletion must
-remove associated profile evidence. No raw cross-class games or profiles are
-returned through adaptive endpoints. See [adaptive research](CHESS-ADAPTIVE-BOTS-RESEARCH.md)
-and [packaged engine/source obligations](CHESS-ENGINE-SOURCE.md).
+The research inventories remain dated proposals, not a blanket feature-parity
+claim. Optional assessed rubrics, public learning milestones and external data
+imports beyond the bounded study mainline importer need their own explicit
+product/security contracts; practice never
+silently changes participation grades, standings or room automation.

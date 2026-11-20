@@ -16,7 +16,7 @@
   constructor(root,{onMove,topPlayer,bottomPlayer,status,promotion,onViewChange}={}){
    Object.assign(this,{root,onMove,topPlayer,bottomPlayer,status,promotion,onViewChange});
    this.alive=true;this.epoch=0;this.cinematicMode=false;this.battleCamera=false;this.fastAnimations=false;this.clockReceived=0;this.clockSource=null;
-   this.view='auto';this.selected='';this.cells=new Map();this.effects=true;this.sound=false;this.timers=new Set();
+   this.view='auto';this.selected='';this.cells=new Map();this.moves=new Set();this.effects=true;this.sound=false;this.timers=new Set();
    root.classList.add('rg-chess-board');root.setAttribute('role','group');root.setAttribute('aria-label','Interactive chessboard');
    root.replaceChildren();
    for(const square of coords){
@@ -49,6 +49,7 @@
   flip(){this.view=this.orientation()==='white'?'black':'white';if(this.match)this.update(this.match,this.options);}
   resetView(){this.view='auto';if(this.match)this.update(this.match,this.options);}
   setCinemaOptions({battleCamera=this.battleCamera,fast=this.fastAnimations}={}){this.battleCamera=!!battleCamera;this.fastAnimations=!!fast;this.paintCinema();}
+  setTheme(theme){if(!['stone','moonlit','bronze'].includes(theme))return false;this.theme=theme;this.root.dataset.theme=theme;this.cinema?.setTheme(theme);return true;}
   getCameraView(){return {...(this.cameraView||{preset:'angled',orbit:0,tilt:58,zoom:1})};}
   setCameraView(patch={}){
    const presets={angled:58,overhead:88,player:38};let view=this.getCameraView();
@@ -118,7 +119,7 @@
    node.replaceChildren();node.className='player-card '+(m.status==='active'&&m.turn===side?'is-turn':'');node.dataset.color=side;
    const avatar=document.createElement('span');avatar.className='player-piece';avatar.textContent='♚';avatar.setAttribute('aria-hidden','true');
    const info=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('span');
-   name.textContent=seat?.name||'Waiting for an opponent';detail.textContent=(mine?'YOU · ':m.mode==='computer'&&side==='black'?'COMPUTER · ':'')+side.toUpperCase()+(m.status==='active'&&m.turn===side?' · TO MOVE':'');
+   name.textContent=seat?.name||'Waiting for an opponent';detail.textContent=(mine?'YOU · ':m.mode==='computer'&&seat?.id==='computer'?'COMPUTER'+(m.personality&&m.personality!=='dynamic'?' · '+m.personality.toUpperCase():'')+' · ':'')+side.toUpperCase()+(m.status==='active'&&m.turn===side?' · TO MOVE':'');
    info.append(name,detail);node.append(avatar,info);if(m.clocks){const clock=make('time','');clock.className='chess-clock';clock.dataset.side=side;clock.setAttribute('aria-live','off');node.append(clock);}
   }
   paintSelection(){
@@ -221,7 +222,7 @@
     if(!this.alive||epoch!==this.epoch||!this.wantCinema)return false;
     if(!this.cinemaHost){this.cinemaHost=make('div','');this.cinemaHost.className='cinema-host';this.cinemaHost.setAttribute('aria-hidden','true');this.root.before(this.cinemaHost);}
     this.cinemaHost.hidden=false;
-    if(!this.cinema){this.cinema=new module.ChessCinema(this.cinemaHost,{onSquare:square=>this.choose(square),onFailure:()=>this.cinemaFailed()});this.cinema.setCameraView(this.getCameraView());}
+    if(!this.cinema){this.cinema=new module.ChessCinema(this.cinemaHost,{onSquare:square=>this.choose(square),onFailure:()=>this.cinemaFailed()});this.cinema.setCameraView(this.getCameraView());this.cinema.setTheme(this.theme||'stone');}
     this.cinematicMode=true;this.root.parentElement.classList.add('cinematic-mode');this.notice.textContent='3D fantasy view · Switch to 2D anytime for keyboard play.';this.paintCinema();this.onViewChange?.(true);return true;
    }catch{if(epoch===this.epoch)this.cinemaFailed();return false;}
   }

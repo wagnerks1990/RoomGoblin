@@ -1,3 +1,15 @@
+## Chess roadmap continuation
+
+Read `docs/CHESS-ROADMAP-STATUS.md`, `docs/CHESS-COMPLETED-REVIEW.md`,
+`docs/CHESS-LEARNING-PATHS.md`, `docs/CHESS-COMPUTER-COLORS.md` and the related
+study/event/challenge docs before changing these features. Completed-game analysis
+must deny active matches, use the shared bounded engine and reauthorize before
+persisting evidence. `white_id` remains the compatibility owner of computer
+practice even when `human_color` is black; never rewrite existing histories.
+Invites and class events require explicit participation; ending an event does not
+end its matches. Lessons, study branches and puzzle runs never change grades or
+competitive results. Keep teacher reports and authoring off the student gateway.
+
 ## Universal Chess Arena (MVP)
 
 Read `docs/CHESS-ARENA.md` before modifying chess, direct SCORM, or learner identity. The universal chess lobby deliberately spans classes without expanding enrollment, administrative permissions, roster access, grade access, or student gateway reachability. LMS-reported names are attribution, not verified identity. Existing enrollment capability and per-student private bearer remain the only direct SCORM authorization. `/learn/chess` requires normal teacher login and must remain denied by the student gateway. Validate moves server-side and use transaction/revision checks. Before releasing, test actual Schoology launch/resume/grade, gateway denial, cross-class privacy and regression suite. Never use SCORM-reported fields to authorize physical attendance or effects.

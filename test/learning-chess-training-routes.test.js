@@ -18,7 +18,7 @@ test('direct training persists private sessions through real routes without grad
   f.learning.platform.configure(f.admin,activity,{points:20});const enrollment=f.learning.direct.issue(f.admin,activity),token=crypto.randomBytes(32).toString('hex');
   const enroll=await f.rawRequest(null,'/api/v1/learning/direct/activities/'+activity+'/enroll','POST',{participantToken:token,reportedId:'synthetic',name:'Synthetic learner'},{Authorization:'RoomGoblin-Assignment '+enrollment});assert.equal(enroll.status,200);
   const base='/api/v1/learning/direct/activities/'+activity+'/chess/training/',call=(suffix,method='GET',body)=>f.rawRequest(null,base+suffix,method,body,{Authorization:'Bearer '+token,Origin:'https://synthetic-lms.example'});
-  assert.equal((await call('catalogue')).body.lessons.length,6);
+  assert.equal((await call('catalogue')).body.lessons.length,32);
   const request={lessonId:'mate-in-one',revision:0,requestId:crypto.randomUUID()},started=await call('start','POST',request);assert.equal(started.status,200);assert.equal((await call('start','POST',request)).body.session.id,started.body.session.id);
   const session=started.body.session;
   const solved=await call('sessions/'+session.id+'/attempt','POST',{revision:session.revision,requestId:crypto.randomUUID(),move:'g6g7'});assert.equal(solved.status,200);assert.equal(solved.body.session.status,'solved');

@@ -3,6 +3,7 @@ const {parse,legal,apply,uci,checked}=require('./learning-chess');
 const {LEVELS,profile}=require('./learning-chess-stockfish-profiles');
 const ADAPTIVE_LEVELS=Object.freeze(['adaptive','adaptive-coach','adaptive-practice']);
 const STYLES=Object.freeze(['balanced','attacking','solid','exploratory']);
+const PERSONALITIES=Object.freeze({dynamic:null,guardian:'solid',explorer:'exploratory',challenger:'attacking'});
 const VALUES=Object.freeze({p:100,n:320,b:335,r:500,q:900,k:0});
 function resolveAdaptive(position,adaptive={},mode='adaptive'){
  if(!adaptive||typeof adaptive!=='object'||Array.isArray(adaptive))throw Object.assign(Error('Invalid adaptive computer profile.'),{status:400});
@@ -10,8 +11,10 @@ function resolveAdaptive(position,adaptive={},mode='adaptive'){
  if(!Number.isInteger(baseBand)||baseBand<0||baseBand>=LEVELS.length||!STYLES.includes(style))throw Object.assign(Error('Invalid adaptive computer profile.'),{status:400});
  const state=parse(position);let material=0;
  for(const piece of state.b)if(piece!=='.')material+=(piece===piece.toUpperCase()?1:-1)*VALUES[piece.toLowerCase()];
- // The computer is Black in RoomGoblin practice. A coarse, disclosed material
+ // Signed material is relative to the human's color. A coarse, disclosed material
  // signal changes at most one band during play; this is not an engine rating.
+ if(adaptive.humanColor!==undefined&&!['white','black'].includes(adaptive.humanColor))throw Object.assign(Error('Invalid adaptive computer color.'),{status:400});
+ if(adaptive.humanColor==='black')material=-material;
  const adjustment=mode!=='adaptive-practice'&&state.full>=3?(material>=300?1:material<=-300?-1:0):0;
  const band=Math.max(0,Math.min(LEVELS.length-1,baseBand+adjustment));
  const effectiveStyle=mode==='adaptive-practice'?style:checked(state)||adjustment<0?'solid':adjustment>0?'attacking':style;
@@ -48,4 +51,4 @@ function styledMove(position,bestmove,variations,style){
  };
  return choices.reduce((chosen,candidate)=>score(candidate)>score(chosen)?candidate:chosen,baseline).move;
 }
-module.exports={ADAPTIVE_LEVELS,STYLES,resolveAdaptive,collectVariation,styledMove};
+module.exports={ADAPTIVE_LEVELS,STYLES,PERSONALITIES,resolveAdaptive,collectVariation,styledMove};

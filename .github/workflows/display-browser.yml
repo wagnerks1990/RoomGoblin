@@ -89,6 +89,14 @@ jobs:
           set -euo pipefail
           for test in \
             learning-chess-training-smoke \
+            learning-chess-review-smoke \
+            learning-chess-studies-smoke \
+            learning-chess-challenges-scorm-smoke \
+            learning-chess-challenges-smoke \
+            learning-chess-puzzle-package-smoke \
+            chess-puzzle-runs-ui-smoke \
+            chess-events-ui-smoke \
+            chess-cinematic-art-smoke \
             learning-chess-vision-smoke \
             learning-chess-coach-smoke \
             learning-chess-computer-cinema-smoke \

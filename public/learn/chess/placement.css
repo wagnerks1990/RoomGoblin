@@ -1,0 +1,8 @@
+.rg-chess-placement{margin-block:1rem;padding:1rem;border:1px solid #668493;border-radius:12px;background:#14232d;color:#eff6f7;overflow-wrap:anywhere}
+.rg-chess-placement [hidden]{display:none!important}
+.rg-chess-placement button,.rg-chess-placement select{font:inherit;min-height:2.5rem;max-width:100%;padding:.45rem .65rem;margin:.25rem;border-radius:6px}
+.rg-chess-placement button:disabled{opacity:.55}
+.rg-chess-placement button:focus-visible,.rg-chess-placement select:focus-visible{outline:3px solid #7ce8da;outline-offset:3px}
+.rg-chess-placement .board{width:min(100%,36rem);margin-block:1rem}
+.rg-chess-placement p{line-height:1.5}
+@media(max-width:480px){.rg-chess-placement{padding:.65rem}.rg-chess-placement>button{display:block;width:100%;margin:.35rem 0}}
