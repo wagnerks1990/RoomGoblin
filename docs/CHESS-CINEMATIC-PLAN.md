@@ -74,6 +74,40 @@ graphic violence; checkmate gets a short ring pulse. No combat outcome comes fro
 physics. Effects off or the system
 reduced-motion preference snaps immediately. Idle scenes render on demand.
 
+### Original sculpture and contact refinement (2026-11-20)
+
+The current forms include actual rearing horses and masonry fortresses, plus
+armored infantry and royal/bishop figures. Original royal mantles, shield reliefs,
+horse cheek straps and flank armor, staggered masonry seams, and a neutral fill
+light improve silhouette and dark-army readability. No new external assets were
+acquired. Humanoid walking compensates each figure's sculpted resting hip/knee
+angles and levels the soles during the planted gait. At capture contact beats,
+held weapons aim in their actual wrist-parent coordinate space toward the other
+posed actor's guard, rather than relying only on independent swing angles. This
+remains stylized presentation, not collision physics or film-quality animation.
+
+`getTheme()` and `setTheme(name)` expose the original `stone`, `moonlit`, and
+`bronze` material palettes. Unknown names return false. Switching palettes changes
+no game data, geometry, selected camera, permissions or scoring. Manual camera
+controls suppress the current optional battle shot; subsequent captures can
+still honor the saved battle-camera preference. Camera shake is limited to that
+explicitly enabled cinematic mode, and fast/reduced-motion remain exempt.
+
+The actual local Edge/WebGL smoke verifies paired weapon direction, three themes,
+32-piece geometry budget, manual camera precedence, and disposal. A second browser
+context verifies actual touch tapping at a 390-pixel viewport and that the system
+reduced-motion preference snaps a capture directly to the confirmed 31-piece
+position. These are browser emulation checks, not physical phone/GPU acceptance.
+Same-view
+comparison to the previous bundle retained **208 draw calls and 116 geometries**;
+triangles changed from **588,580 to 607,268 (+3.2%)**. A synchronized software
+renderer sample reported 0.7 ms versus 0.6 ms median render submission/completion
+time, and 399 ms versus 258 ms initialization; this small synthetic sample is not
+a school-device FPS claim or proof of a speed improvement. Actual low-end school
+hardware and live Schoology acceptance remain separate. Run
+`test/browser/chess-cinematic-performance-smoke.cjs` with optional
+`CHESS_PERF_BASELINE` pointing to a locally retained prior bundle to compare again.
+
 The constructor requires WebGL2 and throws on initialization failure; context loss
 or subsequent rendering failure invokes `onFailure(message)` once. The parent UI
 must retain an accessible semantic 2D board, support switching back, and destroy

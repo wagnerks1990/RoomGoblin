@@ -17,7 +17,10 @@ function positionCommand(position,moves){
 }
 class StockfishComputer{
  constructor({enabled=false,spawnProcess=spawn}={}){this.enabled=enabled===true;this.spawnProcess=spawnProcess;this.jobs=new Set();this.closed=false;}
- async choose(position,difficulty,{signal,moves,adaptive}={}){
+ choose(position,difficulty,options={}){return this.search(position,difficulty,options,false);}
+ analyze(position,options={}){return this.search(position,'intermediate',options,true);}
+ async search(position,difficulty,{signal,moves,adaptive}={},analysis=false){
+  if(signal!==undefined&&!(signal instanceof AbortSignal))throw Object.assign(Error('Use a server-owned cancellation signal.'),{status:400});
   const command=positionCommand(position,moves),decision=ADAPTIVE_LEVELS.includes(difficulty)?resolveAdaptive(position,adaptive,difficulty):null,settings=decision?.profile||profile(difficulty),allowed=new Set(legal(parse(position)).map(uci));
   if(!allowed.size)throw Object.assign(Error('No computer move is available.'),{status:409});
   if(!this.enabled||this.closed||signal?.aborted)throw unavailable();
@@ -26,7 +29,7 @@ class StockfishComputer{
   let finishClose;const closed=new Promise(resolve=>finishClose=resolve),job={cancel:null,closed};this.jobs.add(job);
   return new Promise((resolve,reject)=>{
    let settled=false,ending=false,terminating=false,phase='uci',buffer='',bytes=0,result=null,deadline,killTimer;
-   const variations={depth:-1,values:new Map()};
+   const variations={depth:-1,values:new Map()};let exactAnalysis=null;
    const settle=(error,move)=>{if(settled)return;settled=true;error?reject(error):resolve(move);};
    const kill=()=>{try{child.kill('SIGKILL');}catch{}};
    const terminate=()=>{if(terminating)return;terminating=true;ending=true;try{child.stdin.end('stop\nquit\n');}catch{}try{child.kill('SIGTERM');}catch{}clearTimeout(killTimer);killTimer=setTimeout(kill,LIMITS.killDelayMs);killTimer.unref?.();};
@@ -34,13 +37,14 @@ class StockfishComputer{
    const send=lines=>{if(ending)return;try{child.stdin.write(lines+'\n');}catch{fail();}};
    const line=value=>{
     if(ending)return;
-    if(phase==='uci'&&value==='uciok'){phase='ready';const options=optionCommands(settings.id);if(decision)options[3]='setoption name MultiPV value 3';send(options.join('\n')+'\nucinewgame\nisready');return;}
+    if(phase==='uci'&&value==='uciok'){phase='ready';const options=optionCommands(settings.id);if(decision)options[3]='setoption name MultiPV value 3';if(analysis)options[options.length-1]='setoption name Skill Level value 20';send(options.join('\n')+'\nucinewgame\nisready');return;}
     if(phase==='ready'&&value==='readyok'){phase='search';send(command+'\ngo movetime '+settings.movetime+' nodes '+settings.nodes);return;}
     if(phase==='search'&&decision)collectVariation(variations,value);
+    if(phase==='search'&&analysis){const sample={depth:-1,values:new Map()};collectVariation(sample,/\bmultipv \d+\b/.test(value)?value:value.replace(/^info /,'info multipv 1 '));const exact=sample.values.get(1);if(exact&&(!exactAnalysis||exact.depth>=exactAnalysis.depth))exactAnalysis=exact;}
     if(value.startsWith('bestmove ')){
      const match=/^bestmove ([a-h][1-8][a-h][1-8][qrbn]?)(?: ponder [a-h][1-8][a-h][1-8][qrbn]?)?$/.exec(value);
      if(phase!=='search'||!match||!allowed.has(match[1])){fail();return;}
-     result=decision?styledMove(position,match[1],variations,decision.style):match[1];phase='quitting';ending=true;try{child.stdin.end('quit\n');}catch{fail();return;}
+     if(analysis){const evaluation=exactAnalysis;if(!evaluation||evaluation.move!==match[1]){fail();return;}result={move:match[1],depth:evaluation.depth,score:evaluation.mate!==undefined?{type:'mate',value:evaluation.mate}:{type:'cp',value:evaluation.cp}};}else result=decision?styledMove(position,match[1],variations,decision.style):match[1];phase='quitting';ending=true;try{child.stdin.end('quit\n');}catch{fail();return;}
      killTimer=setTimeout(()=>{settle(unavailable());kill();},LIMITS.killDelayMs);killTimer.unref?.();
     }
    };

@@ -33,3 +33,5 @@
 .table-scroll caption,.leaderboard-table caption{text-align:left;color:#adc3ba;font-size:.75rem;padding:6px 0}
 
 .chess-premove{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px solid #a78bfa;border-radius:9px;background:#2d2549;color:#eee7ff;font-size:.86rem;line-height:1.5}.chess-premove[hidden],.chess-premove button[hidden]{display:none}.chess-premove button{min-height:40px}.rg-chess-board .sq.premove-square{box-shadow:inset 0 0 0 5px #c084fc,inset 0 0 26px #9333ea77}
+
+.rg-chess-board[data-theme="moonlit"] .sq.light{background:#dde4ee}.rg-chess-board[data-theme="moonlit"] .sq.dark{background:#57697d}.rg-chess-board[data-theme="bronze"] .sq.light{background:#ead8b5}.rg-chess-board[data-theme="bronze"] .sq.dark{background:#8c6845}

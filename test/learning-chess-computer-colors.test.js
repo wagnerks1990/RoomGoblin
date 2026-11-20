@@ -1,0 +1,22 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {fixture}=require('./helpers/learning-fixture');
+const {resolveAdaptive}=require('../src/learning-chess-adaptive-decision');
+async function setup(){const f=await fixture();f.id=f.learning.createActivity(f.admin,f.classId,{title:'Color practice',templateId:'scorm-connector-v1'});f.c=f.learning.chess;return f;}
+test('black practice receives one legal opening and only human black moves count as participation',async()=>{const f=await setup();try{
+ const calls=[];f.c.computer={choose:async(p,d,o)=>{calls.push(o);return o.moves.length?'g1f3':'e2e4';}};const m=await f.c.create(f.a,f.id,{mode:'computer',humanColor:'black',timeControl:'5+3',requestId:crypto.randomUUID()});
+ assert.equal(m.myColor,'black');assert.equal(m.white.name,'Computer');assert.equal(m.black.name,'You');assert.deepEqual(m.moves,['e2e4']);assert.equal(f.c.progress(f.a,f.id),0);assert.equal(m.revision,0);assert.equal(m.turn,'black');
+ const moved=await f.c.move(f.a,f.id,m.id,'e7e5',0);assert.deepEqual(moved.moves,['e2e4','e7e5','g1f3']);assert.equal(moved.myColor,'black');assert.equal(f.c.progress(f.a,f.id),1);assert.equal(calls[1].adaptive.humanColor,'black');assert.ok(moved.clocks.black>m.clocks.black);assert.ok(moved.clocks.white>=m.clocks.white);assert.equal(f.c.hint(f.a,f.id,m.id,{revision:1}).revision,1);
+}finally{await f.close();}});
+test('failed or revoked opening leaves no match and concurrent request UUID is idempotent',async()=>{const f=await setup();try{
+ const count=()=>f.store.db.prepare('SELECT COUNT(*) n FROM learning_chess_matches').get().n;let release;f.c.computer={choose:()=>new Promise(r=>release=r)};const options={mode:'computer',humanColor:'black',requestId:crypto.randomUUID()},a=f.c.create(f.a,f.id,options),b=f.c.create(f.a,f.id,options);assert.equal(count(),0);release('e2e4');const [one,two]=await Promise.all([a,b]);assert.equal(one.id,two.id);assert.equal(count(),1);assert.equal(f.c.pendingOpenings.size,0);
+ f.c.computer={choose:async()=>{throw Object.assign(Error('unavailable'),{status:503});}};await assert.rejects(f.c.create(f.a,f.id,{...options,requestId:crypto.randomUUID()}),{status:503});assert.equal(count(),1);
+ f.c.computer={choose:async()=>{f.store.db.prepare('UPDATE users SET enabled=0 WHERE id=?').run(f.a.id);return 'e2e4';}};await assert.rejects(f.c.create(f.a,f.id,{...options,requestId:crypto.randomUUID()}),{status:401});assert.equal(count(),1);
+}finally{await f.close();}});
+test('old white games remain white; black practice outcomes and habits use human color',async()=>{const f=await setup();try{
+ const white=f.c.create(f.a,f.id,{mode:'computer',difficulty:'beginner',requestId:crypto.randomUUID()});f.c.computer={choose:async()=> 'f2f3'};const black=await f.c.create(f.a,f.id,{mode:'computer',humanColor:'black',difficulty:'beginner',requestId:crypto.randomUUID()});assert.equal(f.c.row(white.id).human_color,'white');assert.equal(f.c.render(f.c.row(white.id),f.a).myColor,'white');
+ f.store.db.prepare("UPDATE learning_chess_matches SET status='finished',result='black',reason='checkmate',moves_json=?,revision=1 WHERE id=?").run(JSON.stringify(['f2f3','e7e5','g2g4','d8h4']),black.id);f.learning.adaptive.recordCompleted(black.id);const sample=f.store.db.prepare('SELECT score,own_moves FROM learning_chess_adaptive_samples WHERE match_id=?').get(black.id);assert.equal(sample.score,1);assert.equal(sample.own_moves,2);const stats=f.c.standings(f.a).players.find(p=>p.me).computerStats;assert.equal(stats.wins,1);assert.equal(stats.losses,0);
+ assert.equal(resolveAdaptive('3qk3/8/8/8/8/8/8/4K3 w - - 0 3',{band:2,humanColor:'black'}).band,3);
+}finally{await f.close();}});
+test('black clock expiry credits white computer and draw claims use actual human turn',async()=>{const f=await setup();try{f.c.computer={choose:async()=> 'e2e4'};const m=await f.c.create(f.a,f.id,{mode:'computer',humanColor:'black',difficulty:'beginner',timeControl:'3+0',requestId:crypto.randomUUID()});assert.throws(()=>f.c.draw(f.a,f.id,m.id,{revision:0,action:'claim',kind:'repetition'}),{status:409});f.store.db.prepare('UPDATE learning_chess_matches SET black_ms=1,turn_started_at=? WHERE id=?').run(Date.now()-50,m.id);f.c.expireClocks();assert.equal(f.c.row(m.id).result,'white');assert.equal(f.c.standings(f.a).players.find(p=>p.me).computerStats.losses,1);
+}finally{await f.close();}});

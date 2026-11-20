@@ -6,11 +6,11 @@ const {StockfishComputer,EXECUTABLE,LIMITS,positionCommand}=require('../src/lear
 const {PROFILES,LEVELS,optionCommands}=require('../src/learning-chess-stockfish-profiles');
 const {ChessComputer,LEGACY_LEVELS,selectMove}=require('../src/learning-chess-ai');
 const {START}=require('../src/learning-chess');
-function harness({answer='e2e4',respond=true,exit=true,ignoreKill=false}={}){
+function harness({answer='e2e4',respond=true,exit=true,ignoreKill=false,infoLines=[]}={}){
  const calls=[],children=[];
  const spawn=(file,args,options)=>{
   calls.push({file,args,options});const child=new EventEmitter();child.commands=[];child.signals=[];child.stdout=new PassThrough();child.stderr=new PassThrough();
-  child.stdin=new Writable({write(chunk,_,done){const commands=String(chunk).trim().split('\n');child.commands.push(...commands);for(const cmd of commands)queueMicrotask(()=>{if(!respond)return;if(cmd==='uci')child.stdout.write('id name Stockfish 15.1\nuciok\n');else if(cmd==='isready')child.stdout.write('readyok\n');else if(cmd.startsWith('go '))child.stdout.write('bestmove '+answer+'\n');else if(cmd==='quit'&&exit)child.emit('close',0,null);});done();}});
+  child.stdin=new Writable({write(chunk,_,done){const commands=String(chunk).trim().split('\n');child.commands.push(...commands);for(const cmd of commands)queueMicrotask(()=>{if(!respond)return;if(cmd==='uci')child.stdout.write('id name Stockfish 15.1\nuciok\n');else if(cmd==='isready')child.stdout.write('readyok\n');else if(cmd.startsWith('go '))child.stdout.write(infoLines.join('\n')+'\nbestmove '+answer+'\n');else if(cmd==='quit'&&exit)child.emit('close',0,null);});done();}});
   child.kill=signal=>{child.signals.push(signal);if(!ignoreKill)queueMicrotask(()=>child.emit('close',null,signal));return true;};children.push(child);return child;
  };
  return {spawn,calls,children};
@@ -28,6 +28,12 @@ test('native UCI handshake uses fixed executable, bounded options, minimal envir
 test('disabled engine never executes and malformed position/history cannot inject UCI commands',async()=>{
  const h=harness(),engine=new StockfishComputer({spawnProcess:h.spawn});await assert.rejects(engine.choose(START,'normal'),{status:503});assert.equal(h.calls.length,0);
  assert.throws(()=>positionCommand(START+'\nquit'),/Invalid chess position/);assert.throws(()=>positionCommand(START,['e2e4\nquit']),/Invalid saved chess history/);assert.throws(()=>positionCommand('x'.repeat(129)),/Invalid chess position/);
+});
+test('untrusted JSON cancellation objects are rejected before native process admission',async()=>{
+ const h=harness(),engine=new StockfishComputer({enabled:true,spawnProcess:h.spawn});
+ for(const signal of [{},null,[],{aborted:false},'abort'])await assert.rejects(engine.analyze(START,{signal}),{status:400});
+ assert.equal(h.calls.length,0);assert.equal(engine.jobs.size,0);
+ const controller=new AbortController();assert.equal(await engine.choose(START,'normal',{signal:controller.signal}),'e2e4');
 });
 test('adaptive modes use trusted bounded profile and MultiPV while fixed profiles stay fixed',async()=>{
  for(const mode of ['adaptive','adaptive-coach','adaptive-practice']){const h=harness(),engine=new StockfishComputer({enabled:true,spawnProcess:h.spawn});assert.equal(await engine.choose(START,mode,{adaptive:{band:4,style:'solid'}}),'e2e4');assert.ok(h.children[0].commands.includes('setoption name MultiPV value 3'));assert.ok(h.children[0].commands.includes('setoption name Skill Level value 19'));}
@@ -60,4 +66,11 @@ test('unclosed cancelled native children still block legacy worker over-admissio
 });
 test('ordinary writer drain waits for legacy work without cancelling its move',async()=>{
  const computer=new ChessComputer(),move=computer.choose(START,'advanced');await computer.drain();assert.match(await move,/^[a-h][1-8][a-h][1-8][qrbn]?$/);computer.close();await computer.drain();
+});
+test('bounded analysis returns exact current score and rejects missing or bound-only evaluation',async()=>{
+ const h=harness({infoLines:['info depth 10 score cp 24 pv e2e4 e7e5']}),engine=new StockfishComputer({enabled:true,spawnProcess:h.spawn});assert.deepEqual(await engine.analyze(START),{move:'e2e4',depth:10,score:{type:'cp',value:24}});assert.ok(h.children[0].commands.includes('setoption name Skill Level value 20'));assert.ok(h.children[0].commands.includes('go movetime 350 nodes 75000'));
+ for(const infoLines of [[],['info depth 8 score cp 20 lowerbound pv e2e4'],['info depth 8 score cp 20 pv d2d4']]){const h=harness({infoLines}),engine=new StockfishComputer({enabled:true,spawnProcess:h.spawn});await assert.rejects(engine.analyze(START),{status:503});await engine.drain();}
+});
+test('review analysis shares two-slot admission with ongoing computer games',async()=>{
+ let release;const native={jobs:new Set(),analyze:()=>new Promise(resolve=>release=resolve),choose:async()=> 'e2e4',close(){},async drain(){}};const c=new ChessComputer({stockfish:native});const a=c.analyze(START),b=c.choose(START,'advanced');await assert.rejects(c.analyze(START),{status:429});release({move:'e2e4',depth:8,score:{type:'cp',value:0}});await a;await b;assert.equal(c.active,0);
 });

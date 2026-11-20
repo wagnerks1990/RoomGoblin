@@ -54,7 +54,7 @@ class ChessAdaptive{
  }
  trackMatch(matchId){
   this.writable();return this.store.tx(()=>{const row=this.chess.row(matchId);if(!row)return false;const moves=movesOf(row),known=moves.length===0;
-   const own=this.own(row.white_id,row.activity_id),initial=row.mode==='computer'&&row.difficulty==='adaptive-practice'?JSON.stringify({band:own.band,style:own.eligibleGames>=3?own.style:this.aggregateStyle(),confidence:own.confidence}):null;
+   const own=this.own(row.white_id,row.activity_id),initial=row.mode==='computer'&&row.difficulty==='adaptive-practice'?JSON.stringify({band:own.band,style:require('./learning-chess-adaptive-decision').PERSONALITIES[row.personality||'dynamic']||(own.eligibleGames>=3?own.style:this.aggregateStyle()),confidence:own.confidence}):null;
    return !!this.db.prepare('INSERT OR IGNORE INTO learning_chess_adaptive_provenance(match_id,known,assisted,start_decision_json) VALUES(?,?,0,?)').run(row.id,Number(known),initial).changes;
   });
  }
@@ -102,7 +102,8 @@ class ChessAdaptive{
    const computerBand=provenance?.band_turns?provenance.band_sum/provenance.band_turns:FIXED_BANDS[row.difficulty]??1;
    for(const side of row.mode==='multiplayer'?['white','black']:['white']){
     const userId=row[side+'_id'],activityId=side==='white'?row.activity_id:row.black_activity_id||row.activity_id;if(!userId||!activityId)continue;
-    const h=habits(moves,side),score=eligible?(row.result==='draw'?0.5:row.result===side?1:0):null;
+    const playedSide=row.mode==='computer'?(row.human_color||'white'):side;
+    const h=habits(moves,playedSide),score=eligible?(row.result==='draw'?0.5:row.result===playedSide?1:0):null;
     const challengeBand=row.mode==='multiplayer'?priorBands[side==='white'?'black':'white']:computerBand;
     this.db.prepare('INSERT INTO learning_chess_adaptive_samples(match_id,user_id,activity_id,eligible,exclusion,score,challenge_band,own_moves,opening_moves,center_moves,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(matchId,userId,activityId,Number(eligible),exclusion,score,challengeBand,h.ownMoves,h.openingMoves,h.centerMoves,at);
    }
@@ -144,7 +145,7 @@ class ChessAdaptive{
   return opening&&center/opening<0.15?'exploratory':'balanced';
  }
  profile(user,activityId,options={}){
-  const fresh=this.authorize(user,activityId,options),own=this.own(fresh.id,activityId);return {...own,notice:NOTICE,scope:'This participant in this assignment',rating:null};
+  const fresh=this.authorize(user,activityId,options),own=this.own(fresh.id,activityId),reviewCoaching=this.learning.chessInsights?.coaching(fresh,activityId,options);return {...own,...(reviewCoaching?{reviewCoaching,recommendations:[...new Set([...own.recommendations,...reviewCoaching.recommendations.map(item=>item.lessonId)])]}:{}),notice:NOTICE,scope:'This participant in this assignment',rating:null};
  }
  decision(user,activityId,match,postHumanMoves,options={}){
   this.writable();const fresh=this.authorize(user,activityId,options),row=this.chess.row(match?.id);
@@ -152,7 +153,7 @@ class ChessAdaptive{
   if(row.revision!==match.revision)fail(409,'Your practice game changed. Refresh before moving.');
   const saved=movesOf(row);
   if(!Array.isArray(postHumanMoves)||postHumanMoves.length!==saved.length+1||!saved.every((move,i)=>postHumanMoves[i]===move)||!UCI.test(postHumanMoves.at(-1)||''))fail(409,'Use the server-confirmed practice history.');
-  const state=this.chess.state(row);if(state.t!==1||!legal(state).some(move=>uci(move)===postHumanMoves.at(-1)))fail(409,'The human move is not legal in this practice position.');
+  const state=this.chess.state(row);if(state.t!==(row.human_color==='black'?-1:1)||!legal(state).some(move=>uci(move)===postHumanMoves.at(-1)))fail(409,'The human move is not legal in this practice position.');
   const own=this.own(fresh.id,activityId);
   let selected={band:own.band,style:own.eligibleGames>=3?own.style:this.aggregateStyle(),confidence:own.confidence};
   if(row.difficulty==='adaptive-practice'){
@@ -162,7 +163,8 @@ class ChessAdaptive{
    const saved=this.db.prepare('SELECT start_decision_json FROM learning_chess_adaptive_provenance WHERE match_id=?').get(row.id);
    try{const value=JSON.parse(saved?.start_decision_json||'null');if(Number.isSafeInteger(value?.band)&&value.band>=0&&value.band<=5&&STYLES.has(value.style))selected={band:value.band,style:value.style,confidence:['new','developing','established'].includes(value.confidence)?value.confidence:'new'};}catch{}
   }
-  return {...selected,basis:row.difficulty==='adaptive-practice'?'Private practice snapshot at game creation':'Recent private classroom practice',notice:NOTICE};
+  const personality=require('./learning-chess-adaptive-decision').PERSONALITIES[row.personality||'dynamic'];if(personality)selected.style=personality;
+  return {...selected,...(row.human_color==='black'?{humanColor:'black'}:{}),basis:row.difficulty==='adaptive-practice'?'Private practice snapshot at game creation':'Recent private classroom practice',notice:NOTICE};
  }
 }
 module.exports={ChessAdaptive};

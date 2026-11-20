@@ -1,6 +1,7 @@
 'use strict';
 // The server owns chess rules, turns, and outcomes. Client moves are untrusted.
 const crypto=require('node:crypto');
+const BLACK_OPENING=Symbol('server-confirmed computer opening');
 const START='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const dirs={n:[-33,-31,-18,-14,14,18,31,33],b:[-17,-15,15,17],r:[-16,-1,1,16],k:[-17,-16,-15,-1,1,15,16,17]};
 const on=i=>i>=0&&i<128&&!(i&0x88),side=p=>!p||p==='.'?0:p===p.toUpperCase()?1:-1;
@@ -113,10 +114,12 @@ class ChessMatches {
   const columns=new Set(this.db.prepare('PRAGMA table_info(learning_chess_matches)').all().map(c=>c.name));
   if(!columns.has('mode'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN mode TEXT NOT NULL DEFAULT 'multiplayer'");
   if(!columns.has('black_activity_id'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN black_activity_id TEXT");
+  if(!columns.has('personality'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN personality TEXT NOT NULL DEFAULT 'dynamic' CHECK(personality IN ('dynamic','guardian','explorer','challenger'))");
+  if(!columns.has('human_color'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN human_color TEXT NOT NULL DEFAULT 'white' CHECK(human_color IN ('white','black'))");
   if(!columns.has('difficulty'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'beginner'");
   for(const [name,type] of [['time_control',"TEXT NOT NULL DEFAULT 'none'"],['white_ms','INTEGER'],['black_ms','INTEGER'],['turn_started_at','INTEGER'],['draw_offer','TEXT']])if(!columns.has(name))this.db.exec('ALTER TABLE learning_chess_matches ADD COLUMN '+name+' '+type);
   this.db.exec(`CREATE TABLE IF NOT EXISTS learning_chess_requests(user_id TEXT NOT NULL,request_id TEXT NOT NULL,match_id TEXT NOT NULL REFERENCES learning_chess_matches(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,PRIMARY KEY(user_id,request_id));`);
-  this.positions=new Map();this.positionPlies=0;this.pendingSearch=new Map();this.hintRates=new Map();
+  this.positions=new Map();this.positionPlies=0;this.pendingSearch=new Map();this.pendingOpenings=new Map();this.hintRates=new Map();
   this.db.exec(`CREATE INDEX IF NOT EXISTS learning_chess_global_status ON learning_chess_matches(status,updated_at);
    CREATE INDEX IF NOT EXISTS learning_chess_white_scope ON learning_chess_matches(white_id,activity_id);
    CREATE INDEX IF NOT EXISTS learning_chess_black_scope ON learning_chess_matches(black_id,COALESCE(black_activity_id,activity_id));
@@ -245,6 +248,7 @@ class ChessMatches {
    }
    return this.publicName(id,activityId,role);
   };
+  if(m.mode==='computer'&&m.human_color==='black')return {white:{id:'computer',name:'Computer'},black:{id:m.white_id===viewer.id?viewer.id:null,name:label(m.white_id,'black',m.activity_id)}};
   return {white:{id:m.white_id===viewer.id?viewer.id:null,name:label(m.white_id,'white',m.activity_id)},
    black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id===viewer.id?viewer.id:null,name:'Practice (Black)'}:m.black_id?{id:m.black_id===viewer.id?viewer.id:null,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
  }
@@ -286,11 +290,11 @@ class ChessMatches {
   }
   return {id:m.id,status:m.status,mode:m.mode||'multiplayer',result:m.result,reason:m.reason,
    timeControl:m.time_control||'none',clocks:this.clock(m),drawOffer:m.draw_offer===viewer.id?'you':m.draw_offer?'opponent':null,drawClaims:m.status==='active'?position.claims:{repetition:false,fiftyMove:false},
-   legalMoves:m.status==='active'?legal(state).map(uci):[],inCheck:checked(state),difficulty:m.difficulty||'beginner',
+   legalMoves:m.status==='active'?legal(state).map(uci):[],inCheck:checked(state),difficulty:m.difficulty||'beginner',personality:m.personality||'dynamic',
    ...(adaptive!==undefined?{adaptive}:{}),
    fen:fen(state),turn:state.t===1?'white':'black',moves,revision:m.revision,
    createdAt:m.created_at,updatedAt:m.updated_at,white:names.white,black:names.black,
-   myColor:m.white_id===viewer.id?'white':m.black_id===viewer.id?'black':null,
+   humanColor:m.mode==='computer'?(m.human_color||'white'):null,myColor:m.white_id===viewer.id?(m.mode==='computer'?(m.human_color||'white'):'white'):m.black_id===viewer.id?'black':null,
    canJoin:m.status==='waiting'&&m.white_id!==viewer.id&&this.queueFresh(m)&&this.seatAvailable(m,'white'),
    // Activity identifiers stay private to the teacher operator API.
    ...(this.teacher(viewer)?{activityId:m.activity_id,seatClassId:this.seatClass(viewer,m),queueFresh:m.status==='waiting'?this.queueFresh(m):null,canCancelQueue:!!cleanupClassId,cleanupClassId}:{}),
@@ -339,7 +343,7 @@ class ChessMatches {
  }
  progress(user,activityId){
   const rows=this.db.prepare('SELECT * FROM learning_chess_matches WHERE (white_id=? AND activity_id=?) OR (black_id=? AND COALESCE(black_activity_id,activity_id)=?)').all(user.id,activityId,user.id,activityId);
-  return Math.min(5,rows.reduce((total,m)=>{const n=JSON.parse(m.moves_json).length;return total+(m.mode==='solo'?n:m.white_id===user.id?Math.ceil(n/2):Math.floor(n/2));},0));
+  return Math.min(5,rows.reduce((total,m)=>{const n=JSON.parse(m.moves_json).length;return total+(m.mode==='solo'?n:m.mode==='computer'&&m.human_color==='black'?Math.floor(n/2):m.white_id===user.id?Math.ceil(n/2):Math.floor(n/2));},0));
  }
  leaderboard(viewer,activityId=null,{teacher=false}={}){
   if(teacher){
@@ -361,9 +365,9 @@ class ChessMatches {
    if(game.result===seat){p.wins++;p.winMovesTotal+=moves;p.currentWinStreak++;p.bestWinStreak=Math.max(p.bestWinStreak,p.currentWinStreak);if(category)p[category+'Wins']++;if(category==='mate'){p.mateMovesTotal+=moves;p.fastestMate=p.fastestMate===null?moves:Math.min(p.fastestMate,moves);}}
    else{p.currentWinStreak=0;if(game.result==='draw')p.draws++;else{p.losses++;if(category)p[category+'Losses']++;}}
   }
-  for(const row of this.db.prepare("SELECT white_id,activity_id,mode,status,result,reason FROM learning_chess_matches WHERE mode IN ('computer','solo') AND json_array_length(moves_json)>0").all()){
+  for(const row of this.db.prepare("SELECT white_id,activity_id,mode,status,result,reason,human_color FROM learning_chess_matches WHERE mode IN ('computer','solo') AND json_array_length(moves_json)>0").all()){
    const p=ensure(row.white_id,row.activity_id);p.practice=(p.practice||0)+1;p[row.mode]=(p[row.mode]||0)+1;const stats=p[row.mode+'Stats']||emptyPractice();stats.started++;
-   if(row.status==='active')stats.active++;else if(['practice ended','inactive game'].includes(row.reason))stats.stopped++;else if(row.status==='finished'){stats.games++;stats[row.result==='draw'?'draws':row.result==='white'?'wins':'losses']++;}
+   if(row.status==='active')stats.active++;else if(['practice ended','inactive game'].includes(row.reason))stats.stopped++;else if(row.status==='finished'){stats.games++;stats[row.result==='draw'?'draws':row.result===(row.mode==='computer'?(row.human_color||'white'):'white')?'wins':'losses']++;}
    stats.winRate=stats.games?Math.round(100*stats.wins/stats.games):0;p[row.mode+'Stats']=stats;
   }
   const average=(total,count)=>count?Math.round(total/count*10)/10:null;
@@ -396,29 +400,58 @@ class ChessMatches {
    return {name,lastSeen:r.last_seen};
   });
  }
- create(user,activityId,{teacher=false,mode='multiplayer',difficulty, timeControl='none',requestId=null}={}){
+ create(user,activityId,{teacher=false,mode='multiplayer',difficulty, timeControl='none',requestId=null,skipQueue=false,humanColor='white',personality='dynamic',[BLACK_OPENING]:opening=null}={}){
   if(difficulty===undefined)difficulty=mode==='computer'?'adaptive':'beginner';
+  if(!['white','black'].includes(humanColor)||humanColor==='black'&&mode!=='computer')error(400,'Choose a valid computer practice color.');
+  if(typeof personality!=='string'||!Object.hasOwn(require('./learning-chess-adaptive-decision').PERSONALITIES,personality)||personality!=='dynamic'&&(mode!=='computer'||!['adaptive','adaptive-coach','adaptive-practice'].includes(difficulty)))error(400,'Choose an adaptive computer personality, or Dynamic for fixed levels.');
   this.authorize(user,activityId,true,{teacher});
   if(!require('./learning-chess-ai').LEVELS.includes(difficulty))error(400,'Choose an available computer level.');
   if(!['multiplayer','computer','solo'].includes(mode))error(400,'Choose multiplayer, computer, or solo practice.');
   if(!Object.hasOwn(TIME_CONTROLS,timeControl)||mode==='solo'&&timeControl!=='none')error(400,'Choose an available time control. Solo practice is untimed.');
   if(requestId!==null&&(typeof requestId!=='string'||!/^[-a-f0-9]{36}$/.test(requestId)))error(400,'A valid game request ID is required.');
+  if(mode==='computer'&&humanColor==='black'&&!opening)return this.createComputerBlack(user,activityId,{teacher,mode,difficulty,timeControl,requestId,humanColor,personality});
   return this.store.tx(()=>{
-   this.expireClocks();const fingerprint=JSON.stringify([activityId,mode,difficulty,timeControl]);
+   this.expireClocks();const fingerprint=JSON.stringify([activityId,mode,difficulty,timeControl,...(humanColor==='black'?['black']:[]),...(personality!=='dynamic'?['personality',personality]:[])]);
    if(requestId){const old=this.db.prepare('SELECT * FROM learning_chess_requests WHERE user_id=? AND request_id=?').get(user.id,requestId);if(old){if(old.fingerprint!==fingerprint)error(409,'This game request was already used with different settings.');return this.render(this.row(old.match_id),user);}}
-   else{const old=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode=? AND time_control=? AND status IN ('waiting','active') AND ((white_id=? AND activity_id=?) OR (black_id=? AND COALESCE(black_activity_id,activity_id)=?)) LIMIT 1").get(mode,timeControl,user.id,activityId,user.id,activityId);if(old)return this.render(old,user);}
+   else{const old=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode=? AND time_control=? AND human_color=? AND personality=? AND status IN ('waiting','active') AND ((white_id=? AND activity_id=?) OR (black_id=? AND COALESCE(black_activity_id,activity_id)=?)) LIMIT 1").get(mode,timeControl,humanColor,personality,user.id,activityId,user.id,activityId);if(old)return this.render(old,user);}
    this.capacity(user);
    const remember=m=>{if(requestId)this.db.prepare('INSERT INTO learning_chess_requests(user_id,request_id,match_id,fingerprint) VALUES(?,?,?,?)').run(user.id,requestId,m.id,fingerprint);return this.render(m,user);};
-   if(mode==='multiplayer'){
+   // Server-only class-event pairing skips the universal queue. Public routes
+   // never forward this option; the event service joins both consenting seats
+   // atomically before the waiting row can become externally visible.
+   if(mode==='multiplayer'&&!skipQueue){
     const available=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode='multiplayer' AND time_control=? AND status='waiting' AND white_id<>? ORDER BY created_at,id").all(timeControl,user.id).find(m=>this.seatAvailable(m,'white')&&this.queueFresh(m));
     if(available){const stamp=new Date().toISOString();const change=this.db.prepare("UPDATE learning_chess_matches SET black_id=?,black_activity_id=?,status='active',turn_started_at=?,revision=revision+1,updated_at=? WHERE id=? AND status='waiting' AND black_id IS NULL").run(user.id,activityId,timeControl==='none'?null:Date.now(),stamp,available.id);if(!change.changes)error(409,'Match queue changed. Try again.');this.learning.event(user,activityId,'chess.join',available.id,{matchedFromQueue:true});return remember(this.row(available.id));}
    }
    if(this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE status IN ('waiting','active')").get().n>=250)error(429,'Chess service is at capacity.');
    const id=crypto.randomUUID(),stamp=new Date().toISOString(),status=mode==='multiplayer'?'waiting':'active',base=TIME_CONTROLS[timeControl][0];
    this.db.prepare('INSERT INTO learning_chess_matches(id,activity_id,white_id,black_id,status,moves_json,created_at,updated_at,mode,difficulty,time_control,white_ms,black_ms,turn_started_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,activityId,user.id,mode==='solo'?user.id:null,status,'[]',stamp,stamp,mode,difficulty,timeControl,base||null,base||null,status==='active'&&base?Date.now():null);
+   if(humanColor==='black')this.db.prepare('UPDATE learning_chess_matches SET human_color=? WHERE id=?').run('black',id);
+   if(personality!=='dynamic')this.db.prepare('UPDATE learning_chess_matches SET personality=? WHERE id=?').run(personality,id);
    this.learning.adaptive?.trackMatch(id);
+   if(opening){play(START,[],opening.move);this.db.prepare('UPDATE learning_chess_matches SET moves_json=? WHERE id=?').run(JSON.stringify([opening.move]),id);if(opening.adaptive&&difficulty==='adaptive-practice')this.db.prepare('UPDATE learning_chess_adaptive_provenance SET start_decision_json=? WHERE match_id=?').run(JSON.stringify(opening.adaptive),id);if(opening.applied)this.learning.adaptive.saveDecision(id,opening.applied);}
    this.learning.event(user,activityId,'chess.create',id,{mode,difficulty,timeControl});return remember(this.row(id));
   });
+ }
+ async createComputerBlack(user,activityId,options){
+  const {teacher,difficulty,timeControl,requestId,personality='dynamic'}=options;
+  const fingerprint=JSON.stringify([activityId,'computer',difficulty,timeControl,'black',...(personality!=='dynamic'?['personality',personality]:[])]);
+  const key=user.id+':'+(requestId||fingerprint),pending=this.pendingOpenings.get(key);
+  if(pending){if(pending.fingerprint!==fingerprint)error(409,'This game request was already used with different settings.');return pending.promise;}
+  const existing=()=>{
+   if(requestId){const request=this.db.prepare('SELECT * FROM learning_chess_requests WHERE user_id=? AND request_id=?').get(user.id,requestId);if(request){if(request.fingerprint!==fingerprint)error(409,'This game request was already used with different settings.');return this.row(request.match_id);}}
+   else return this.db.prepare("SELECT * FROM learning_chess_matches WHERE white_id=? AND activity_id=? AND mode='computer' AND human_color='black' AND time_control=? AND personality=? AND status='active' LIMIT 1").get(user.id,activityId,timeControl,personality);
+  };
+  const prior=existing();if(prior)return this.render(prior,user);this.capacity(user);
+  if(this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE status IN ('waiting','active')").get().n>=250)error(429,'Chess service is at capacity.');
+  const promise=(async()=>{
+   this.learning.adaptive.writable();const fresh=this.learning.adaptive.authorize(user,activityId,{teacher});this.authorize(fresh,activityId,true,{teacher});
+   let adaptive,applied;if(['adaptive','adaptive-coach','adaptive-practice'].includes(difficulty)){const own=this.learning.adaptive.own(fresh.id,activityId);adaptive={band:own.band,style:require('./learning-chess-adaptive-decision').PERSONALITIES[personality]||(own.eligibleGames>=3?own.style:this.learning.adaptive.aggregateStyle()),humanColor:'black',confidence:own.confidence};applied=require('./learning-chess-adaptive-decision').resolveAdaptive(START,adaptive,difficulty);}
+   this.computer??=new(require('./learning-chess-ai').ChessComputer)();const move=await this.computer.choose(START,difficulty,{moves:[],adaptive});play(START,[],move);
+   this.learning.adaptive.writable();const current=this.learning.adaptive.authorize(user,activityId,{teacher});this.authorize(current,activityId,true,{teacher});
+   return this.create(current,activityId,{...options,[BLACK_OPENING]:{move,adaptive,applied}});
+  })();this.pendingOpenings.set(key,{fingerprint,promise});
+  try{return await promise;}finally{this.pendingOpenings.delete(key);}
  }
  leave(user,activityId,matchId,revision,{teacher=false}={}){
   this.authorize(user,activityId,true,{teacher});this.expireClocks();
@@ -461,7 +494,7 @@ class ChessMatches {
   if(m.status!=='active'||m.revision!==input.revision)error(409,'Practice position changed. Refresh first.');
   if(!this.seatAvailable(m,'white'))error(409,'Your practice assignment is unavailable.');
   const state=this.state(m);
-  if(m.mode==='computer'&&(state.t!==1||this.pendingSearch.has(m.id+':'+m.revision)))error(409,'Wait for your computer opponent to finish.');
+  if(m.mode==='computer'&&(state.t!==(m.human_color==='black'?-1:1)||this.pendingSearch.has(m.id+':'+m.revision)))error(409,'Wait for your computer opponent to finish.');
   // No game or grade mutation; record only private assistance provenance.
   const now=performance.now();for(const [id,bucket]of this.hintRates)if(now-bucket.at>=60000)this.hintRates.delete(id);
   let bucket=this.hintRates.get(user.id);
@@ -480,7 +513,7 @@ class ChessMatches {
    if(!this.seatAvailable(m,'white')||m.mode==='multiplayer'&&!this.seatAvailable(m,'black'))error(409,'A player assignment is paused, closed, or unavailable.');
    const position=this.position(m),state=position.state;let reason=null,offer=m.draw_offer;
    if(input.action==='claim'){
-    if(m.mode!=='solo'&&(state.t===1?m.white_id:m.black_id)!==user.id)error(403,'Only the player to move may claim a draw.');
+    if(m.mode==='computer'?state.t!==(m.human_color==='black'?-1:1):m.mode!=='solo'&&(state.t===1?m.white_id:m.black_id)!==user.id)error(403,'Only the player to move may claim a draw.');
     let claims=position.claims;if(input.move!==undefined){const next=legal(state).find(x=>uci(x)===input.move);if(!next)error(409,'The intended move is not legal.');claims=claimable([...historyOf(JSON.parse(m.moves_json)),apply(state,next)]);}
     if(input.kind==='repetition'&&claims.repetition)reason='threefold repetition';else if(input.kind==='fifty-move'&&claims.fiftyMove)reason='fifty-move rule';else error(409,'This position does not support that draw claim.');
    }else{
@@ -511,7 +544,7 @@ class ChessMatches {
    if(prior.length>=20000)error(409,'Maximum match length reached.');
    const whiteTurn=prior.length%2===0;
    if(m.mode==='multiplayer'&&(whiteTurn?m.white_id:m.black_id)!==user.id)error(403,'It is not your turn.');
-   if(m.mode==='computer'&&!whiteTurn)error(409,'Computer turn is already in progress.');
+   if(m.mode==='computer'&&whiteTurn!==(m.human_color!=='black'))error(409,'Computer turn is already in progress.');
    const initial=play(START,prior,requested),moves=[...prior,requested];let state=initial;
    return {m,moves,state};
   };
@@ -521,8 +554,9 @@ class ChessMatches {
    const prepared=prepare(),{m,moves}=prepared;let {state}=prepared;const clock=this.clock(m,receivedAt);
    if(clock){const moving=JSON.parse(m.moves_json).length%2?'black':'white';if(clock[moving]<=0)error(409,'Your clock has expired.');clock[moving]+=clock.increment;}
    if(m.mode==='computer'&&state.outcome.status==='active'){
-    if(clock&&clock.black<=Date.now()-receivedAt){clock.black=0;state.outcome={status:'finished',result:canMate(parse(state.fen),1)?'white':'draw',reason:'timeout'};}
-    else{state=play(START,moves,computerMove);moves.push(computerMove);if(clock)clock.black=clock.black-(Date.now()-receivedAt)+clock.increment;}
+    const computerSide=m.human_color==='black'?'white':'black',humanSide=m.human_color||'white';
+    if(clock&&clock[computerSide]<=Date.now()-receivedAt){clock[computerSide]=0;state.outcome={status:'finished',result:canMate(parse(state.fen),humanSide==='white'?1:-1)?humanSide:'draw',reason:'timeout'};}
+    else{state=play(START,moves,computerMove);moves.push(computerMove);if(clock)clock[computerSide]=clock[computerSide]-(Date.now()-receivedAt)+clock.increment;}
    }
    const offer=state.outcome.status==='active'&&m.draw_offer===user.id?m.draw_offer:null;
    const changed=this.db.prepare('UPDATE learning_chess_matches SET moves_json=?,status=?,result=?,reason=?,white_ms=?,black_ms=?,turn_started_at=?,draw_offer=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?')
@@ -547,4 +581,4 @@ class ChessMatches {
 function playHistory(moves){
  let s=parse();for(const move of moves){const m=legal(s).find(x=>uci(x)===move);if(!m)error(409,'Chess history invalid.');s=apply(s,m);}return s;
 }
-module.exports={ChessMatches,START,parse,fen,legal,apply,uci,play,outcome,checked,claimable,historyOf,canMate,lockedPawns,TIME_CONTROLS,error};
+module.exports={ChessMatches,START,parse,fen,legal,apply,uci,play,outcome,checked,attacked,claimable,historyOf,canMate,lockedPawns,TIME_CONTROLS,error};

@@ -7,6 +7,7 @@ import { HEAD_POSITIONS, HEAD_INDICES } from './assets/stone-head.mjs';
 
 // Presentation only. The caller supplies server-confirmed state and owns every move.
 const VERSION = '0.187.0';
+const THEMES=Object.freeze({stone:{white:0xcac9bd,black:0x404950,trim:0x929387,dark:0x34434b,light:0xb1baaa},moonlit:{white:0xc5d3df,black:0x354559,trim:0x9baebc,dark:0x293b53,light:0x9aafc0},bronze:{white:0xd4c5a5,black:0x51483d,trim:0xa6936f,dark:0x423f39,light:0xbab09a}});
 const point = square => new THREE.Vector3(square.charCodeAt(0) - 100.5, 0, 3.5 - (Number(square[1]) - 1));
 function position(fen) {
   const rows = String(fen || '').split(' ')[0].split('/'), pieces = new Map();
@@ -46,6 +47,9 @@ export class ChessCinema {
       const key = new THREE.DirectionalLight(0xffe4bb, 3.6); key.position.set(-5, 12, 7);
       key.castShadow=true;key.shadow.mapSize.set(512,512);Object.assign(key.shadow.camera,{left:-6,right:6,top:6,bottom:-6,near:1,far:25});key.shadow.bias=-0.001;this.scene.add(key);
       const rim = new THREE.DirectionalLight(0x6ce5cf, 1.5); rim.position.set(6, 5, -5); this.scene.add(rim);
+      // Broad neutral fill reveals the dark army's carved silhouettes without
+      // an extra shadow map or animated lighting cost.
+      const fill=new THREE.DirectionalLight(0xc9d9f0,1.25);fill.position.set(-4,5,-7);this.scene.add(fill);
       this.pieces = new THREE.Group(); this.scene.add(this.pieces);
       this.overlays = new THREE.Group(); this.scene.add(this.overlays);
       this.white = this.material({ color: 0xc3c5b9, roughness: 0.9, metalness: 0.02 });
@@ -61,6 +65,8 @@ export class ChessCinema {
       this.headTemplate.setAttribute('uv',new THREE.BufferAttribute(uv,2));
       const dark = this.material({ color: 0x334758, roughness: 0.93 });
       const light = this.material({ color: 0xa6bbae, roughness: 0.93 });
+      this.boardDark=dark;this.boardLight=light;this.theme='stone';
+      for(const [material,color]of [[this.white,THEMES.stone.white],[this.black,THEMES.stone.black],[this.gold,THEMES.stone.trim],[dark,THEMES.stone.dark],[light,THEMES.stone.light]])material.color.setHex(color);
       const frame = this.material({ color: 0x1b2a3e, roughness: 0.8, metalness: 0.2 });
       this.part(this.scene, new THREE.BoxGeometry(8.65, 0.35, 8.65), frame, 0, -0.22, 0);
       const floor=this.part(this.scene,new THREE.CylinderGeometry(7.3,7.6,0.22,48),frame,0,-0.52,0);floor.receiveShadow=true;
@@ -108,6 +114,29 @@ export class ChessCinema {
     } catch (error) { this.destroy(); throw error; }
   }
   material(options) { const material = new THREE.MeshStandardMaterial(options); this.materials.add(material); return material; }
+  getTheme(){return this.theme;}
+  setTheme(name){
+    if(!Object.hasOwn(THEMES,name)||this.disposed||this.failed)return false;
+    const colors=THEMES[name];for(const [material,color]of [[this.white,colors.white],[this.black,colors.black],[this.gold,colors.trim],[this.boardDark,colors.dark],[this.boardLight,colors.light]])material.color.setHex(color);
+    this.theme=name;this.render();return true;
+  }
+  aimCapture(attacker,defender,beat){
+    if(!attacker||!defender)return;
+    // Align the held weapon's long axis in its actual wrist-parent space. This
+    // couples the two posed actors instead of playing independent canned swings.
+    const aim=(actor,target,weight)=>{
+      const pivot=actor.userData.rig?.weapon;if(!pivot||weight<=0)return;
+      actor.updateMatrixWorld(true);target.updateMatrixWorld(true);
+      const contact=target.localToWorld(new THREE.Vector3(0,0.94,-0.08));
+      const local=pivot.parent.worldToLocal(contact.clone()).sub(pivot.position);
+      if(local.lengthSq()<0.0001)return;
+      const rotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),local.normalize());
+      pivot.quaternion.slerp(rotation,weight);actor.userData.contactTarget=contact;
+    };
+    const pulse=(center,width)=>{const x=Math.max(0,1-Math.abs(beat-center)/width);return x*x*(3-2*x);};
+    aim(attacker,defender,Math.max(pulse(0.548,0.045),pulse(0.785,0.06)));
+    aim(defender,attacker,pulse(0.655,0.045));
+  }
   stoneTexture(){
     // Original deterministic mineral grain. No downloaded photographic assets.
     const size=128,data=new Uint8Array(size*size*4);
@@ -161,7 +190,9 @@ export class ChessCinema {
       this.part(body,new THREE.BoxGeometry(0.042,0.28,0.018),this.recess,x*0.285,0.86,z*0.285).rotation.y=angle;
       this.part(body,new THREE.BoxGeometry(0.13,0.018,0.018),this.recess,x*0.29,0.91,z*0.29).rotation.y=angle;
     }
-    for(let row=0;row<4;row++){const ring=this.part(body,new THREE.TorusGeometry(0.28+(3-row)*0.01,0.006,4,24),this.gold,0,0.42+row*0.18);ring.rotation.x=Math.PI/2;}
+    for(let row=0;row<4;row++){const radius=0.28+(3-row)*0.01,ring=this.part(body,new THREE.TorusGeometry(radius,0.006,4,24),this.gold,0,0.42+row*0.18);ring.rotation.x=Math.PI/2;
+      for(let i=0;i<8;i++){const angle=(i+(row%2)*0.5)*Math.PI/4;this.part(body,new THREE.BoxGeometry(0.009,0.13,0.009),this.recess,Math.sin(angle)*radius,0.50+row*0.18,Math.cos(angle)*radius).rotation.y=angle;}
+    }
     this.mergeParts(body);for(const mesh of body.children)mesh.castShadow=mesh.receiveShadow=true;
     group.userData={token,baseScale:1,baseYaw:token===token.toUpperCase()?0:Math.PI,joints:[],restJoints:[],restLower:[],rig:{fortress:true}};group.rotation.y=group.userData.baseYaw;return group;
   }
@@ -181,6 +212,12 @@ export class ChessCinema {
       this.part(head,new THREE.SphereGeometry(0.020,8,6),this.recess,x*0.75,0.08,-0.36);
     }
     const jaw=this.part(head,new THREE.BoxGeometry(0.13,0.06,0.23),this.gold,0,0.005,-0.23);jaw.rotation.x=-0.07;
+    for(const side of [-1,1]){
+      const cheek=new THREE.CatmullRomCurve3([new THREE.Vector3(side*0.12,0.25,-0.10),new THREE.Vector3(side*0.12,0.10,-0.23),new THREE.Vector3(side*0.085,0.04,-0.34)]);
+      this.part(head,new THREE.TubeGeometry(cheek,8,0.013,5,false),this.gold);
+      const plate=stone(new THREE.SphereGeometry(1,12,8),side*0.21,0.89,0.04);plate.scale.set(0.045,0.28,0.23);
+      this.part(body,new THREE.TorusGeometry(0.10,0.012,5,12),this.gold,side*0.253,0.94,0.04).rotation.y=Math.PI/2;
+    }
     const mane=new THREE.CatmullRomCurve3([new THREE.Vector3(0,1.01,0.31),new THREE.Vector3(0,1.35,0.13),new THREE.Vector3(0,1.67,-0.10)]);
     stone(new THREE.TubeGeometry(mane,14,0.05,6,false),0,0);
     const tail=new THREE.CatmullRomCurve3([new THREE.Vector3(0,0.64,0.36),new THREE.Vector3(0.04,0.36,0.53),new THREE.Vector3(0.08,0.16,0.38)]);
@@ -228,6 +265,14 @@ export class ChessCinema {
       for(let j=0;j<3;j++){const plate=stone(new THREE.BoxGeometry(0.13,0.055,0.12),side*(0.16+j*0.014),0.75-j*0.045,-0.045);plate.rotation.z=side*0.13;}
     }
     this.part(chest,new THREE.CylinderGeometry(0.19,0.21,0.055,20),this.gold,0,0.25);
+    if(kind!=='p'){
+      // Original layered mantle: a readable rear silhouette at the player's
+      // usual view, attached to the chest so it follows the actor's weight.
+      const cape=new THREE.CylinderGeometry(0.20,kind==='q'?0.34:0.30,0.76,20,5,true,-Math.PI/2,Math.PI);
+      for(let i=0;i<cape.attributes.position.count;i++){const x=cape.attributes.position.getX(i),z=cape.attributes.position.getZ(i),fold=1+Math.cos(Math.atan2(z,x)*10)*0.07;cape.attributes.position.setX(i,x*fold);cape.attributes.position.setZ(i,z*fold);}
+      cape.computeVertexNormals();const mantle=this.part(chest,cape,mat,0,-0.13,0.025);mantle.rotation.y=Math.PI/2;
+      for(const side of [-1,1])this.part(chest,new THREE.SphereGeometry(0.038,8,6),this.gold,side*0.15,0.22,-0.11);
+    }
     metal(new THREE.BoxGeometry(0.035,0.28,0.022),0,0.94,-0.175);
     metal(new THREE.BoxGeometry(0.32,0.05,0.13),0,0.71,-0.02);
     const limb=(x,y,arm)=>{
@@ -262,6 +307,9 @@ export class ChessCinema {
       held('right',new THREE.ConeGeometry(0.065,0.21,6),mat,0.34,1.56);
       const shield=new THREE.Shape();shield.moveTo(-0.17,0.18);shield.quadraticCurveTo(0,0.25,0.17,0.18);shield.lineTo(0.14,-0.10);shield.lineTo(0,-0.25);shield.lineTo(-0.14,-0.10);shield.closePath();
       held('left',new THREE.ExtrudeGeometry(shield,{depth:0.045,bevelEnabled:true,bevelSize:0.012,bevelThickness:0.008,bevelSegments:1,steps:1}),mat,-0.29,0.78,-0.13);
+      held('left',new THREE.BoxGeometry(0.025,0.29,0.018),this.gold,-0.29,0.78,-0.145);
+      held('left',new THREE.BoxGeometry(0.21,0.025,0.018),this.gold,-0.29,0.83,-0.145);
+      held('left',new THREE.SphereGeometry(0.040,10,6),this.gold,-0.29,0.81,-0.16);
     }else if(kind==='r'){
       stone(new THREE.BoxGeometry(0.39,0.15,0.32),0,1.36);
       for(const x of [-0.15,0,0.15])stone(new THREE.BoxGeometry(0.08,0.12,0.32),x,1.49);
@@ -327,6 +375,9 @@ export class ChessCinema {
   getCameraView(){return {...this.cameraView};}
   setCameraView(options={}){
     if(this.disposed||this.failed)return this.getCameraView();
+    // Manual viewing always wins for the current capture. Future captures may
+    // still use the explicitly enabled cinematic camera preference.
+    if(this.animation)this.animation.battleCamera=false;
     this.cameraView=cameraView(this.cameraView,options);this.applyCameraView();this.render();return this.getCameraView();
   }
   resetCameraView(){return this.setCameraView({preset:'angled'});}

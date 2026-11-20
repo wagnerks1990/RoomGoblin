@@ -37,6 +37,22 @@ cancels; ordinary `drain` waits and must never cancel accepted searches. Ship
 matching GPL source and notices with the pinned engine. Read
 CHESS-ADAPTIVE-BOTS-RESEARCH.md and CHESS-ENGINE-SOURCE.md.
 
+The 32 original guided drills include a branching opening exercise, private spaced
+review and assistance-aware teacher sequences. The optional four-position
+starting-point check suggests practice without estimating ability or changing
+grades, drill totals or adaptive strength. Private class concept summaries require
+at least five contributors; never publish individual weaknesses.
+
+Teacher studies validate FEN sanity, retain isolated private learner branches,
+and support completed-game feedback. Explicit demonstration following must not
+overwrite a private branch or unsaved notes. One-move control grants expire and
+recheck original assignment authority; hide other learners' grant identities.
+PGN import verifies a bounded mainline and creates only its final-position study;
+reject unsupported variations rather than silently dropping them. Finished-game
+analysis/retries, invitations, class events and puzzle runs keep their separate
+authorization, revision, assistance and result boundaries. Read CHESS-STUDIES.md,
+CHESS-LEARNING-PATHS.md and CHESS-STARTING-POINT.md before changing these contracts.
+
 Guided training has a separate exact route allowlist, server-owned positions and
 objectives, private revisioned sessions and assisted progress. No lesson, vision
 round or profile changes SCORM grades or multiplayer results. Preserve the
@@ -59,7 +75,7 @@ own seat and exact match, revalidated against fresh server legal moves and sent
 once through the existing revision-checked endpoint. Cancel on disabled, hidden,
 blurred, changed or disconnected state; never persist or retry. See CHESS-ARENA.md.
 CHESS-COM-FEATURE-ROADMAP.md and CHESS-COM-PLAY-FEATURES-RESEARCH.md are dated
-public-source research and proposed priorities, not implemented coach/analysis APIs.
+public-source research inventories; use CHESS-ROADMAP-STATUS.md for implemented scope and remaining acceptance, rather than inferring blanket feature parity.
 
 New learning packages use the [direct assignment data API](DIRECT-ASSIGNMENT-API.md):
 no preapproved roster, signed launch, companion window or cookie dependency.

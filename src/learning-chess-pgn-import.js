@@ -1,0 +1,14 @@
+'use strict';
+const {START,parse,fen,legal,apply}=require('./learning-chess');const {san}=require('./learning-chess-review');
+const fail=message=>{throw Object.assign(Error(message),{status:400});};
+function importMainline(value,validate){
+ if(typeof value!=='string'||Buffer.byteLength(value)>12000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value))fail('Use a PGN mainline up to 12 KiB.');
+ let source=value.trim();const tags=new Map();while(source.startsWith('[')){const match=/^\[([A-Za-z][A-Za-z0-9_]*)\s+"((?:[^"\\\r\n]|\\["\\])*)"\]\s*/.exec(source);if(!match||tags.has(match[1])||tags.size>=32)fail('Invalid, repeated or excessive PGN tags.');tags.set(match[1],match[2].replace(/\\(["\\])/g,'$1'));source=source.slice(match[0].length);}
+ if(source.includes('[')||source.includes(']'))fail('PGN tags must precede the mainline.');
+ let stripped='',comment=false;for(let i=0;i<source.length;i++){const c=source[i];if(c==='{'){if(comment)fail('Nested comments are unsupported.');comment=true;stripped+=' ';}else if(c==='}'){if(!comment)fail('Unmatched PGN comment.');comment=false;}else if(!comment&&c===';'){while(i<source.length&&source[i]!=='\n')i++;stripped+=' ';}else if(!comment)stripped+=c;}if(comment)fail('Unclosed PGN comment.');if(/[()$!?]/.test(stripped))fail('Import only a mainline without variations, NAGs or annotation symbols.');
+ if(tags.has('SetUp')&&!['0','1'].includes(tags.get('SetUp'))||tags.get('SetUp')==='1'&&!tags.has('FEN')||tags.has('FEN')&&tags.get('SetUp')!=='1')fail('A custom PGN start requires SetUp "1" and a valid FEN.');
+ let state=parse(validate(tags.get('FEN')||START)),plies=0,ended=false,result=null;const tokens=stripped.replace(/([0-9]+)\.(\.\.)?/g,' $1.$2 ').trim().split(/\s+/).filter(Boolean);
+ for(const token of tokens){if(ended)fail('Unexpected content after the PGN result.');if(['1-0','0-1','1/2-1/2','*'].includes(token)){ended=true;result=token;continue;}const number=/^([1-9][0-9]*)\.(\.\.)?$/.exec(token);if(number){if(Number(number[1])!==state.full||!!number[2]!==(state.t===-1))fail('PGN move numbers do not match the position.');continue;}if(++plies>400)fail('Import at most 400 plies.');if(!/^(?:O-O(?:-O)?|(?:[KQRBN](?:[a-h]|[1-8]|[a-h][1-8])?|[a-h]?)x?[a-h][1-8](?:=[QRBN])?)[+#]?$/.test(token))fail('Unsupported SAN token: '+token.slice(0,20));const choices=legal(state),matches=choices.filter(move=>san(state,move,choices)===token);if(matches.length!==1)fail('SAN must describe exactly one legal move, with correct check or mate notation: '+token.slice(0,20));state=apply(state,matches[0]);}
+ if(!plies)fail('The PGN contains no played mainline moves.');if(tags.has('Result')&&tags.get('Result')!==result)fail('The PGN tag result and final result marker disagree.');return {fen:fen(state),plies,notice:'Only the verified mainline final position is imported. Comments, results and tags do not become game records or grades.'};
+}
+module.exports={importMainline};

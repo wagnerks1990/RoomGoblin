@@ -13,8 +13,9 @@ const LESSONS=[
  {id:'mate-in-one',title:'Finish with checkmate',stage:'Endgames',concept:'Queen-and-king coordination',objective:'Deliver checkmate in one move.',description:'Coordinate the queen with the nearby king. A checking move is not enough if the opponent still has an escape.',evidence:'Reach a server-verified position with check and no legal reply.',fen:'7k/8/5KQ1/8/8/8/8/8 w - - 0 1',example:'g6g7',hints:['Find a checking square that also covers the black king’s escape squares.','Your king can protect a queen placed diagonally next to it.','Try Qg7: move the queen from g6 to g7.'],goal:(_s,_m,n)=>checked(n)&&legal(n).length===0,success:'Checkmate: the black king is attacked and has no legal reply. This is distinct from stalemate, where the king is not in check.'},
  {id:'knight-fork',title:'Fork king and queen',stage:'Tactics',concept:'Knight fork',objective:'Use the knight to attack Black’s king and queen at once.',description:'A knight can attack two valuable targets from one landing square. Find the checking fork in this prepared position.',evidence:'Create a legal knight check that simultaneously attacks the queen; this drill does not claim a searched best continuation.',fen:'4k3/7q/8/7N/8/8/8/K7 w - - 0 1',example:'h5f6',hints:['Compare the knight’s L-shaped destinations with both black pieces.','Look for a destination that checks the king; then inspect its other attacks.','Try Nf6+: move the knight from h5 to f6.'],goal:(s,m,n)=>s.b[m[0]]==='N'&&checked(n)&&[-33,-31,-18,-14,14,18,31,33].some(d=>n.b[m[1]+d]==='q'),success:'The knight attacks both king and queen. Because the king is in check, Black must answer the check before making another plan.'},
 ];
+LESSONS.push(...require('./learning-chess-curriculum').EXTRA_LESSONS);
 const LESSON_MAP=new Map(LESSONS.map(lesson=>[lesson.id,lesson]));
-for(const lesson of LESSONS){const s=parse(lesson.fen),m=legal(s).find(m=>uci(m)===lesson.example);if(!m||!lesson.goal(s,m,apply(s,m)))throw Error('Invalid authored chess lesson: '+lesson.id);Object.freeze(lesson.hints);Object.freeze(lesson);}
+for(const lesson of LESSONS){const s=parse(lesson.fen),m=legal(s).find(m=>uci(m)===lesson.example);if(!m||!lesson.goal(s,m,apply(s,m)))throw Error('Invalid authored chess lesson: '+lesson.id);if(lesson.steps){let position=parse(lesson.fen);for(const step of lesson.steps){const move=legal(position).find(m=>uci(m)===step.example);if(!move||!step.goal(position,move,apply(position,move)))throw Error('Invalid lesson step: '+lesson.id);position=apply(position,move);if(step.reply){const reply=legal(position).find(m=>uci(m)===step.reply(step.example));if(!reply)throw Error('Invalid authored reply: '+lesson.id);position=apply(position,reply);}Object.freeze(step.hints);Object.freeze(step);}Object.freeze(lesson.steps);}Object.freeze(lesson.hints);Object.freeze(lesson);}
 
 function input(body,fields){
  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==fields.length||fields.some(k=>!Object.hasOwn(body,k)))fail(400,'Use only the documented training request fields.');
@@ -40,6 +41,8 @@ class ChessTraining{
    updated_at TEXT NOT NULL,PRIMARY KEY(user_id,activity_id,lesson_id),
    CHECK(hint_level BETWEEN 0 AND 3),CHECK(length(last_response_json)<=32768));
    CREATE INDEX IF NOT EXISTS learning_chess_training_scope ON learning_chess_training(activity_id,user_id);`);
+  if(!this.db.prepare('PRAGMA table_info(learning_chess_training)').all().some(column=>column.name==='step_index'))this.db.exec('ALTER TABLE learning_chess_training ADD COLUMN step_index INTEGER NOT NULL DEFAULT 0');
+  this.learningProgress=new (require('./learning-chess-progress').ChessLearningProgress)(this,LESSONS);
  }
  authorize(user,activityId,write,options){
   if(write&&!this.available())fail(423,'Training is temporarily unavailable while the application is saving or shutting down.');
@@ -54,11 +57,11 @@ class ChessTraining{
  project(row){
   const lesson=LESSON_MAP.get(row.lesson_id);if(!lesson||row.lesson_version!==1)fail(409,'This lesson has changed. Start its current version again.');
   const state=parse(row.solved_fen||lesson.fen);
-  return {session:{id:row.session_id,lessonId:row.lesson_id,revision:row.revision,status:row.status,fen:fen(state),turn:state.t===1?'white':'black',legalMoves:row.status==='active'?legal(state).map(uci):[],inCheck:checked(state),attempts:row.session_attempts,hintLevel:row.hint_level,hints:lesson.hints.slice(0,row.hint_level),feedback:row.feedback,lastMove:row.last_move,assisted:row.hint_level>0},progress:this.totals(row),notice:NOTICE};
+  return {session:{id:row.session_id,lessonId:row.lesson_id,revision:row.revision,status:row.status,fen:fen(state),turn:state.t===1?'white':'black',legalMoves:row.status==='active'?legal(state).map(uci):[],inCheck:checked(state),attempts:row.session_attempts,hintLevel:row.hint_level,step:(row.step_index||0)+1,totalSteps:lesson.steps?.length||1,hints:(lesson.steps?.[row.step_index||0]?.hints||lesson.hints).slice(0,row.hint_level),feedback:row.feedback,lastMove:row.last_move,assisted:row.hint_level>0},progress:this.totals(row),notice:NOTICE};
  }
  catalogue(user,activityId,options={}){
   const fresh=this.authorize(user,activityId,false,options);
-  return {version:1,notice:NOTICE,lessons:LESSONS.map(lesson=>{const row=this.row(fresh.id,activityId,lesson.id);return {id:lesson.id,title:lesson.title,stage:lesson.stage,concept:lesson.concept,objective:lesson.objective,description:lesson.description,evidence:lesson.evidence,revision:row?.revision||0,progress:this.totals(row),session:row?this.project(row).session:null};})};
+  return {version:1,notice:NOTICE,lessons:LESSONS.map(lesson=>{const row=this.row(fresh.id,activityId,lesson.id);return {id:lesson.id,title:lesson.title,stage:lesson.stage,concept:lesson.concept,difficulty:lesson.difficulty||'foundation',searchText:[lesson.title,lesson.stage,lesson.concept,lesson.objective].join(' ').toLowerCase(),objective:lesson.objective,description:lesson.description,evidence:lesson.evidence,revision:row?.revision||0,progress:this.totals(row),session:row?this.project(row).session:null};})};
  }
  progress(user,activityId,options={}){return this.catalogue(user,activityId,options);}
  replay(row,body,action){
@@ -83,7 +86,7 @@ class ChessTraining{
    const fresh=this.authorize(user,activityId,true,options),row=this.row(fresh.id,activityId,lesson.id),replay=this.replay(row,body,'start');if(replay)return replay;
    if((row?.revision||0)!==body.revision)fail(409,'Your lesson changed. Refresh before restarting.');this.budget(fresh.id);
    const sessionId=crypto.randomUUID(),at=new Date().toISOString();
-   if(row){const changed=this.db.prepare("UPDATE learning_chess_training SET session_id=?,revision=revision+1,status='active',hint_level=0,session_attempts=0,solved_fen=NULL,last_move=NULL,feedback='',updated_at=? WHERE user_id=? AND activity_id=? AND lesson_id=? AND revision=?").run(sessionId,at,fresh.id,activityId,lesson.id,body.revision);if(!changed.changes)fail(409,'Your lesson changed. Refresh before restarting.');}
+   if(row){const changed=this.db.prepare("UPDATE learning_chess_training SET session_id=?,revision=revision+1,status='active',hint_level=0,step_index=0,session_attempts=0,solved_fen=NULL,last_move=NULL,feedback='',updated_at=? WHERE user_id=? AND activity_id=? AND lesson_id=? AND revision=?").run(sessionId,at,fresh.id,activityId,lesson.id,body.revision);if(!changed.changes)fail(409,'Your lesson changed. Refresh before restarting.');}
    else this.db.prepare("INSERT INTO learning_chess_training(user_id,activity_id,lesson_id,session_id,revision,status,last_request_id,last_fingerprint,last_response_json,updated_at) VALUES(?,?,?,?,1,'active',?,?,?,?)").run(fresh.id,activityId,lesson.id,sessionId,body.requestId,'','{}',at);
    return this.saveReply(fresh,activityId,lesson.id,body,'start',{reset:!!row});
   });
@@ -102,15 +105,21 @@ class ChessTraining{
     if(row.hint_level>=lesson.hints.length)fail(409,'All three hints have already been revealed.');this.budget(fresh.id);
     changed=this.db.prepare('UPDATE learning_chess_training SET hint_level=hint_level+1,revision=revision+1,updated_at=? WHERE session_id=? AND revision=?').run(at,sessionId,row.revision);details={hintLevel:row.hint_level+1,assisted:true};
    }else{
-    const state=parse(lesson.fen),move=legal(state).find(m=>uci(m)===body.move);if(!move)fail(409,'That move is not legal in this lesson position. Your king must remain safe.');
-    const next=apply(state,move),correct=!!lesson.goal(state,move,next),assisted=row.hint_level>0;this.budget(fresh.id);
-    changed=this.db.prepare(`UPDATE learning_chess_training SET revision=revision+1,session_attempts=session_attempts+1,total_attempts=total_attempts+1,status=?,solved_fen=?,last_move=?,feedback=?,completions=completions+?,unassisted_completions=unassisted_completions+?,assisted_completions=assisted_completions+?,first_try_completions=first_try_completions+?,best_hint_level=?,updated_at=? WHERE session_id=? AND revision=?`).run(correct?'solved':'active',correct?fen(next):null,body.move,correct?lesson.success:'That move is legal, but it does not meet this lesson’s objective. The starting position is restored so you can try again.',Number(correct),Number(correct&&!assisted),Number(correct&&assisted),Number(correct&&!assisted&&row.session_attempts===0),correct?Math.min(row.best_hint_level??3,row.hint_level):row.best_hint_level,at,sessionId,row.revision);details={correct,assisted};
+    const state=parse(lesson.steps&&row.solved_fen?row.solved_fen:lesson.fen),move=legal(state).find(m=>uci(m)===body.move);if(!move)fail(409,'That move is not legal in this lesson position. Your king must remain safe.');
+    let next=apply(state,move);const step=lesson.steps?.[row.step_index||0],correct=!!(step?.goal||lesson.goal)(state,move,next),complete=correct&&(!lesson.steps||row.step_index===lesson.steps.length-1),assisted=row.hint_level>0;this.budget(fresh.id);
+    if(correct&&step?.reply){const reply=legal(next).find(m=>uci(m)===step.reply(body.move));if(!reply)fail(409,'The prepared lesson continuation is unavailable.');next=apply(next,reply);}
+    const stepIndex=(row.step_index||0)+Number(correct&&!complete),feedback=complete?lesson.success:correct?'Step complete. The prepared opponent reply was played; now develop the knight from g1 to f3.':'That move is legal, but it does not meet this lesson’s objective. The current exercise step is restored so you can try again.';
+    changed=this.db.prepare(`UPDATE learning_chess_training SET revision=revision+1,session_attempts=session_attempts+1,total_attempts=total_attempts+1,status=?,solved_fen=?,last_move=?,feedback=?,step_index=?,completions=completions+?,unassisted_completions=unassisted_completions+?,assisted_completions=assisted_completions+?,first_try_completions=first_try_completions+?,best_hint_level=?,updated_at=? WHERE session_id=? AND revision=?`).run(complete?'solved':'active',correct?fen(next):lesson.steps?row.solved_fen:null,body.move,feedback,stepIndex,Number(complete),Number(complete&&!assisted),Number(complete&&assisted),Number(complete&&!assisted&&row.session_attempts===(row.step_index||0)),complete?Math.min(row.best_hint_level??3,row.hint_level):row.best_hint_level,at,sessionId,row.revision);details={correct,complete,assisted,step:stepIndex+1};if(changed?.changes&&(!correct||complete))this.learningProgress.record(fresh.id,activityId,row.lesson_id,{correct:complete,assisted,sessionId});
    }
    if(!changed?.changes)fail(409,'Your lesson changed. Refresh before continuing.');
    return this.saveReply(fresh,activityId,row.lesson_id,body,action,details);
   });
  }
+ review(...args){return this.learningProgress.review(...args);}
+ sequences(...args){return this.learningProgress.sequences(...args);}
+ saveSequence(...args){return this.learningProgress.saveSequence(...args);}
+ teacherReport(...args){return this.learningProgress.teacherReport(...args);}
  attempt(user,activityId,sessionId,body,options={}){return this.mutate(user,activityId,sessionId,body,'attempt',options);}
  hint(user,activityId,sessionId,body,options={}){return this.mutate(user,activityId,sessionId,body,'hint',options);}
 }
-module.exports={ChessTraining};
+module.exports={ChessTraining,getOriginalLesson:id=>LESSON_MAP.get(id)||null};

@@ -7,11 +7,22 @@ saved levels remain compatible. These are challenge labels, not certified Elo.
 Private outcome evidence and thresholded aggregate opening trends guide
 adaptation without exposing cross-class profiles or retraining engine weights.
 
-Six guided drills save server-validated, assistance-aware progress separately
-from grades. Coordinate practice is local and untimed or optionally timed.
+Thirty-two original guided drills save server-validated, assistance-aware progress
+separately from grades, with private spaced review, teacher sequences and an
+optional four-position starting-point check. Private teacher concept summaries
+require at least five contributors. These are practice aids, not rating estimates. Coordinate practice is local and untimed or optionally timed.
 The 3D board adds camera presets/orbit/tilt/zoom, confirmed computer-pair
 animations and castling-rook motion. Multiplayer supports one cancellable local
 premove, rechecked against the next server-owned legal position.
+
+Teacher studies add validated positions, private learner branches/notes and
+completed-game feedback. Explicit demonstration following preserves private edits;
+expiring/revocable control grants permit one legal source move. Bounded mainline
+PGN import creates a verified final-position study, not an annotated game archive.
+Finished-game review/replay/export, consent-based rematches/invitations, class
+events and separate daily/survival puzzle runs retain original assignment scope.
+See the [implementation status](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/CHESS-ROADMAP-STATUS.md)
+for release checks and remaining acceptance; source completion is not deployment.
 
 Teachers monitor and play at `/learn/chess`; students launch freshly exported
 Chess SCORM packages. Existing assignment capabilities and private participant

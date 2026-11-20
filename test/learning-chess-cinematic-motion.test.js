@@ -1,6 +1,13 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),{pathToFileURL}=require('node:url');
 const motion=import(pathToFileURL(path.resolve(__dirname,'../public/learn/chess/cinematic/animation.mjs')));
+test('humanoid walking reaches the same planted legs from different sculpted rest stances',async()=>{
+ const {createChoreography}=await motion,options={from:{x:0,z:0},to:{x:0,z:-2},kind:'p'};
+ const a=createChoreography({...options,legRest:{hips:[0,0],knees:[0,0]}}),b=createChoreography({...options,legRest:{hips:[0.35,0.35],knees:[-0.65,-0.65]}});
+ const first=a.sample(a.duration*0.47).attacker.action,second=b.sample(b.duration*0.47).attacker.action;
+ assert.ok(first.footLevel>0.99);for(let i=0;i<2;i++){assert.ok(Math.abs(first.joints[i]-(second.joints[i]+0.35))<1e-9);assert.ok(Math.abs(first.lower[i]-(second.lower[i]-0.65))<1e-9);}
+ assert.equal(a.sample(a.duration).attacker.action.footLevel,0);
+});
 
 test('all six cinematic forms stay finite and settle on the confirmed destination',async()=>{
  const {createChoreography}=await motion;let samples=0;

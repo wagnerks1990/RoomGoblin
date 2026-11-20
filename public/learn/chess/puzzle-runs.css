@@ -1,0 +1,11 @@
+.rg-chess-puzzle-runs{margin-block:1rem;padding:1rem;border:1px solid #577080;border-radius:12px;background:#14232d;color:#eff6f7;overflow-wrap:anywhere}
+.rg-chess-puzzle-runs [hidden]{display:none!important}
+.rg-chess-puzzle-runs button,.rg-chess-puzzle-runs select{max-width:100%;min-height:2.5rem;margin:.25rem;padding:.45rem .65rem;font:inherit;border-radius:6px}
+.rg-chess-puzzle-runs button:focus-visible,.rg-chess-puzzle-runs select:focus-visible{outline:3px solid #7ce8da;outline-offset:3px}
+.rg-chess-puzzle-runs button:disabled{opacity:.55}
+.rg-chess-puzzle-runs fieldset{margin-block:1rem;border:1px solid #668493;border-radius:8px}
+.rg-chess-puzzle-runs select[multiple]{display:block;width:min(100%,40rem)}
+.rg-chess-puzzle-runs .board{width:min(100%,36rem);margin-block:1rem}
+.rg-chess-puzzle-runs p{line-height:1.5}
+.rg-chess-puzzle-runs ol{padding-inline-start:1.5rem}
+@media(max-width:480px){.rg-chess-puzzle-runs{padding:.65rem}.rg-chess-puzzle-runs>button{display:block;width:100%;margin:.35rem 0}}

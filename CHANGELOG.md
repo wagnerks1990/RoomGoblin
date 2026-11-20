@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Extend chess with private finished-game replay/export, saved bounded engine
+  evidence and legal retry practice; add Black-side computer games while preserving
+  legacy owners and history. Add expanded original lessons, spaced review, teacher
+  sequences/reports, private study branches and finished-game feedback.
+- Add consent-based invitations, rematches and class events with separate byes/team
+  scores, plus daily puzzle runs and untimed survival. Keep all practice separate
+  from participation grades, multiplayer results and physical room effects.
+- Refine original stone-warrior detail, grounded motion and paired capture contact;
+  add stone, moonlit and bronze themes without external runtime assets.
+
 - Generate bundled 3D renderer UUIDs with Web Crypto rather than weak random
   words. Apply the guarded patch reproducibly during bundling, retain the full
   upstream license and fail back to 2D if required browser features are absent.

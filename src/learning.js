@@ -164,6 +164,13 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
   const training=new(require('./learning-chess-training').ChessTraining)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.training=training;
   const adaptive=new(require('./learning-chess-adaptive').ChessAdaptive)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.adaptive=adaptive;
+  const chessReview=new(require('./learning-chess-review').ChessReview)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.chessReview=chessReview;
+  const chessInsights=new(require('./learning-chess-review-insights').ChessReviewInsights)(learning,{review:chessReview,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.chessInsights=chessInsights;
+  const chessEvents=new(require('./learning-chess-events').ChessEvents)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.chessEvents=chessEvents;
+  const studies=new(require('./learning-chess-studies').ChessStudies)(learning,{training,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.studies=studies;
+  const chessChallenges=new(require('./learning-chess-challenges').ChessChallenges)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.chessChallenges=chessChallenges;
+  const puzzleRuns=new(require('./learning-chess-puzzle-runs').ChessPuzzleRuns)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.puzzleRuns=puzzleRuns;
+  const placement=new(require('./learning-chess-placement').ChessPlacement)(learning,{training,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.placement=placement;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
@@ -279,12 +286,66 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   // The chess queue is global, while each move uses the caller's own assignment.
   app.get(api+'/activities/:id/chess/adaptive',wrap((req,res)=>res.json({ok:true,profile:adaptive.profile(req.learner,req.params.id)})));
   app.get(api+'/teacher/classes/:id/chess/adaptive',requireTeacher,wrap((req,res)=>res.json({ok:true,profile:adaptive.profile(req.learner,chess.teacherActivity(req.learner,req.params.id),{teacher:true})})));
-  for(const [suffix,method] of [['catalogue','catalogue'],['progress','progress']]){
+  for(const [suffix,method] of [['catalogue','catalogue'],['progress','progress'],['review','review'],['sequences','sequences']]){
     app.get(api+'/activities/:id/chess/training/'+suffix,wrap((req,res)=>res.json({ok:true,...training[method](req.learner,req.params.id)})));
     app.get(api+'/teacher/classes/:id/chess/training/'+suffix,requireTeacher,wrap((req,res)=>res.json({ok:true,...training[method](req.learner,chess.teacherActivity(req.learner,req.params.id),{teacher:true})})));
   }
   app.post(api+'/activities/:id/chess/training/start',wrap((req,res)=>res.json({ok:true,...training.startLesson(req.learner,req.params.id,req.body)})));
   app.post(api+'/teacher/classes/:id/chess/training/start',requireTeacher,wrap((req,res)=>res.json({ok:true,...training.startLesson(req.learner,chess.teacherActivity(req.learner,req.params.id),req.body,{teacher:true})})));
+  app.post(api+'/teacher/classes/:id/chess/training/sequences',requireTeacher,wrap((req,res)=>res.json({ok:true,...training.saveSequence(req.learner,chess.teacherActivity(req.learner,req.params.id),req.body,{teacher:true})})));
+  app.get(api+'/teacher/classes/:id/chess/training/report',requireTeacher,wrap((req,res)=>res.json({ok:true,...training.teacherReport(req.learner,chess.teacherActivity(req.learner,req.params.id),{...req.query,teacher:true})})));
+  for(const teacher of [false,true]){
+    const placementPrefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/placement';
+    const placementGuard=teacher?[requireTeacher]:[];
+    const placementActivity=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(placementPrefix,...placementGuard,wrap((req,res)=>res.json({ok:true,...placement.get(req.learner,placementActivity(req),{teacher})})));
+    app.post(placementPrefix+'/start',...placementGuard,wrap((req,res)=>res.json({ok:true,...placement.start(req.learner,placementActivity(req),req.body,{teacher})})));
+    for(const action of ['attempt','hint','skip'])app.post(placementPrefix+'/:placementId/'+action,...placementGuard,wrap((req,res)=>res.json({ok:true,...placement[action](req.learner,placementActivity(req),req.params.placementId,req.body,{teacher})})));
+    const puzzlePrefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/puzzle-runs';
+    const puzzleGuard=teacher?[requireTeacher]:[];
+    const puzzleActivity=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(puzzlePrefix,...puzzleGuard,wrap((req,res)=>res.json({ok:true,...puzzleRuns.catalogue(req.learner,puzzleActivity(req),{teacher})})));
+    if(teacher)app.post(puzzlePrefix+'/daily',requireTeacher,wrap((req,res)=>res.json({ok:true,...puzzleRuns.createDaily(req.learner,puzzleActivity(req),req.body,{teacher:true})})));
+    app.post(puzzlePrefix+'/start',...puzzleGuard,wrap((req,res)=>res.json({ok:true,...puzzleRuns.start(req.learner,puzzleActivity(req),req.body,{teacher})})));
+    for(const action of ['attempt','hint','stop'])app.post(puzzlePrefix+'/:runId/'+action,...puzzleGuard,wrap((req,res)=>res.json({ok:true,...puzzleRuns[action](req.learner,puzzleActivity(req),req.params.runId,req.body,{teacher})})));
+    const challengePrefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/challenges';
+    const challengeGuard=teacher?[requireTeacher]:[];
+    const challengeActivity=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(challengePrefix,...challengeGuard,wrap((req,res)=>res.json({ok:true,...chessChallenges.list(req.learner,challengeActivity(req),{teacher})})));
+    for(const [suffix,method]of [['rematch','request'],['invite','createInvite'],['preview-invite','previewInvite'],['accept-invite','acceptInvite']])app.post(challengePrefix+'/'+suffix,...challengeGuard,wrap((req,res)=>res.json({ok:true,...chessChallenges[method](req.learner,challengeActivity(req),req.body,{teacher})})));
+    for(const action of ['accept','decline','cancel'])app.post(challengePrefix+'/:challengeId/'+action,...challengeGuard,wrap((req,res)=>res.json({ok:true,...chessChallenges.respond(req.learner,challengeActivity(req),req.params.challengeId,req.body,action,{teacher})})));
+    const studyPrefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/studies';
+    const studyGuard=teacher?[requireTeacher]:[];
+    const studyActivity=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(studyPrefix,...studyGuard,wrap((req,res)=>res.json({ok:true,...studies.list(req.learner,studyActivity(req),{teacher})})));
+    if(teacher)app.post(studyPrefix,requireTeacher,wrap((req,res)=>res.json({ok:true,...studies.saveStudy(req.learner,studyActivity(req),req.body,{teacher:true})})));
+    if(teacher)app.post(studyPrefix+'/import',requireTeacher,wrap((req,res)=>res.json({ok:true,...studies.importPgn(req.learner,studyActivity(req),req.body,{teacher:true})})));
+    app.get(studyPrefix+'/:studyId',...studyGuard,wrap((req,res)=>res.json({ok:true,...studies.get(req.learner,studyActivity(req),req.params.studyId,{teacher})})));
+    if(teacher){
+      app.get(studyPrefix+'/:studyId/participants',requireTeacher,wrap((req,res)=>{if(Object.keys(req.query).some(key=>key!=='after'))fail(400,'Use only the participant cursor.');res.json({ok:true,...studies.participants(req.learner,studyActivity(req),req.params.studyId,{teacher:true,after:req.query.after})});}));
+      app.post(studyPrefix+'/:studyId/grant',requireTeacher,wrap((req,res)=>res.json({ok:true,...studies.grant(req.learner,studyActivity(req),req.params.studyId,req.body,{teacher:true})})));
+    }
+    app.post(studyPrefix+'/:studyId/demo-move',...studyGuard,wrap((req,res)=>res.json({ok:true,...studies.demoMove(req.learner,studyActivity(req),req.params.studyId,req.body,{teacher})})));
+    app.post(studyPrefix+'/:studyId/branch',...studyGuard,wrap((req,res)=>res.json({ok:true,...studies.branch(req.learner,studyActivity(req),req.params.studyId,req.body,{teacher})})));
+    app.get(studyPrefix+'/matches/:matchId/feedback',...studyGuard,wrap((req,res)=>res.json({ok:true,...studies.feedback(req.learner,studyActivity(req),req.params.matchId,{teacher})})));
+    if(teacher)app.post(studyPrefix+'/matches/:matchId/feedback',requireTeacher,wrap((req,res)=>res.json({ok:true,...studies.saveFeedback(req.learner,studyActivity(req),req.params.matchId,req.body,{teacher:true})})));
+    const eventPrefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/events';
+    const eventGuard=teacher?[requireTeacher]:[];
+    const eventActivity=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(eventPrefix,...eventGuard,wrap((req,res)=>res.json({ok:true,...chessEvents.list(req.learner,eventActivity(req),{teacher})})));
+    if(teacher)app.post(eventPrefix,requireTeacher,wrap((req,res)=>res.json({ok:true,...chessEvents.create(req.learner,eventActivity(req),req.body,{teacher:true})})));
+    for(const action of (teacher?['join','withdraw','next','end']:['join','withdraw']))app.post(eventPrefix+'/:eventId/'+action,...eventGuard,wrap((req,res)=>res.json({ok:true,...chessEvents[action](req.learner,eventActivity(req),req.params.eventId,req.body,{teacher})})));
+    const prefix=api+(teacher?'/teacher/classes/:id':'/activities/:id')+'/chess/review';
+    const middleware=teacher?[requireTeacher]:[];
+    const scope=req=>teacher?chess.teacherActivity(req.learner,req.params.id):req.params.id;
+    app.get(prefix+'/history',...middleware,wrap((req,res)=>res.json({ok:true,...chessReview.history(req.learner,scope(req),{...req.query,teacher})})));
+    for(const action of ['replay','pgn'])app.get(prefix+'/matches/:matchId/'+action,...middleware,wrap((req,res)=>res.json({ok:true,...chessReview[action](req.learner,scope(req),req.params.matchId,{...req.query,teacher})})));
+    const reviewInput=(req,fields)=>{if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||Object.keys(req.body).length!==fields.length||fields.some(k=>!Object.hasOwn(req.body,k)))fail(400,'Use only the documented review request fields.');};
+    for(const action of ['analyze','retry'])app.post(prefix+'/matches/:matchId/'+action,...middleware,wrap(async(req,res)=>{reviewInput(req,['ply']);res.json({ok:true,...await chessReview[action](req.learner,scope(req),req.params.matchId,{ply:req.body.ply,teacher})});}));
+    app.post(prefix+'/matches/:matchId/retry/attempt',...middleware,wrap(async(req,res)=>{reviewInput(req,['ply','move']);res.json({ok:true,...await chessReview.attempt(req.learner,scope(req),req.params.matchId,{ply:req.body.ply,move:req.body.move,teacher})});}));
+    app.get(prefix+'/matches/:matchId/insights',...middleware,wrap((req,res)=>res.json({ok:true,...chessInsights.read(req.learner,scope(req),req.params.matchId,{teacher})})));
+    app.post(prefix+'/matches/:matchId/insights',...middleware,wrap(async(req,res)=>{reviewInput(req,[]);res.json({ok:true,...await chessInsights.advance(req.learner,scope(req),req.params.matchId,{teacher})});}));
+  }
   for(const action of ['attempt','hint']){
     app.post(api+'/activities/:id/chess/training/sessions/:sessionId/'+action,wrap((req,res)=>res.json({ok:true,...training[action](req.learner,req.params.id,req.params.sessionId,req.body)})));
     app.post(api+'/teacher/classes/:id/chess/training/sessions/:sessionId/'+action,requireTeacher,wrap((req,res)=>res.json({ok:true,...training[action](req.learner,chess.teacherActivity(req.learner,req.params.id),req.params.sessionId,req.body,{teacher:true})})));
@@ -292,9 +353,9 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/teacher/chess/leaderboard',requireTeacher,wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,null,{teacher:true})})));
   app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>{const matches=chess.teacherList(req.learner),totals=chess.teacherTotals(req.learner);res.json({ok:true,matches,connected:chess.connected(req.learner),totals,history:{limit:100,returned:matches.filter(m=>m.status==='finished').length,total:totals.finished}});}));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/cancel-queue',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.cancelQueue(req.learner,req.params.id,req.params.matchId,req.body)})));
-  app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
+  app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap(async(req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
-    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
+    res.json({ok:true,match:await chess.create(req.learner,activityId,{teacher:true,humanColor:req.body?.humanColor||'white',personality:req.body?.personality||'dynamic',mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
   }));
   app.post(api+'/teacher/classes/:id/chess/heartbeat',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
@@ -320,7 +381,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
-  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})})));
+  app.post(api+'/activities/:id/chess',wrap(async(req,res)=>res.json({ok:true,match:await chess.create(req.learner,req.params.id,{humanColor:req.body?.humanColor||'white',personality:req.body?.personality||'dynamic',mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/leave',wrap((req,res)=>res.json({ok:true,match:chess.leave(req.learner,req.params.id,req.params.matchId,req.body?.revision)})));

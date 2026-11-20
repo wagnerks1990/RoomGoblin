@@ -20,23 +20,25 @@ export function solveLegIK(forward,height,upper=0.26,lower=0.26){
  const knee=-(Math.PI-Math.acos(clamp((upper*upper+lower*lower-distance*distance)/(2*upper*lower),-1,1)));
  return {hip,knee,ankle:-hip-knee};
 }
-function stance(){return {joints:[0,0,0.12,0.12],lower:[0,0,0.30,0.30],side:[0,0,0.06,-0.06],twist:[0,0,0,0],chest:[0,0,0],head:[0,0,0],weapon:-0.12,crouch:0,lean:0,lift:0};}
+function stance(){return {joints:[0,0,0.12,0.12],lower:[0,0,0.30,0.30],side:[0,0,0.06,-0.06],twist:[0,0,0,0],chest:[0,0,0],head:[0,0,0],weapon:-0.12,crouch:0,lean:0,lift:0,footLevel:0};}
 function pose(values={}){return {...stance(),...values};}
-function blend(a,b,t){const result={};for(const key of ['joints','lower','side','twist','chest','head'])result[key]=arrayMix(a[key],b[key],t);for(const key of ['weapon','crouch','lean','lift'])result[key]=lerp(a[key],b[key],t);return result;}
+function blend(a,b,t){const result={};for(const key of ['joints','lower','side','twist','chest','head'])result[key]=arrayMix(a[key],b[key],t);for(const key of ['weapon','crouch','lean','lift','footLevel'])result[key]=lerp(a[key],b[key],t);return result;}
 function keypose(t,frames){if(t<=frames[0][0])return frames[0][1];for(let i=1;i<frames.length;i++)if(t<=frames[i][0])return blend(frames[i-1][1],frames[i][1],ramp(t,frames[i-1][0],frames[i][0]));return frames.at(-1)[1];}
-function walking(distance,weight,kind,legLength){
+function walking(distance,weight,kind,legLength,legRest){
  const result=stance(),stride=kind==='r'?0.60:kind==='n'?0.76:0.68,phase=distance/stride;
  for(let i=0;i<2;i++){
   const cycle=((phase+i*0.5)%1+1)%1,contact=0.64,range=stride*contact/2,swing=clamp((cycle-contact)/(1-contact));
   const forward=cycle<contact?range-stride*cycle:lerp(-range,range,ease(swing));
   const lift=cycle<contact?0:Math.sin(swing*Math.PI)*0.085;
   const leg=solveLegIK(forward,legLength*2-0.055-lift,legLength,legLength),neutral=solveLegIK(0,legLength*2-0.055,legLength,legLength);
-  result.joints[i]=(leg.hip-neutral.hip)*weight;result.lower[i]=(leg.knee-neutral.knee)*weight;
+  // Different figures have different sculpted resting stances. Subtract the
+  // actual rest angles, not an assumed neutral knee, to reach the same ground.
+  result.joints[i]=(leg.hip-(legRest?.hips?.[i]??neutral.hip))*weight;result.lower[i]=(leg.knee-(legRest?.knees?.[i]??neutral.knee))*weight;
   result.joints[2+i]=-Math.sin(TAU*(phase+i*0.5))*0.20*weight+0.16;result.lower[2+i]=0.35+0.12*weight;
  }
  result.chest=[-0.04*weight,Math.sin(TAU*phase)*0.035*weight,-Math.sin(TAU*phase)*0.022*weight];
  result.head=[0,Math.sin(TAU*phase)*-0.025*weight,0];result.lean=-0.035*weight;
- result.weapon=-0.10+Math.sin(TAU*phase)*0.045*weight;
+ result.weapon=-0.10+Math.sin(TAU*phase)*0.045*weight;result.footLevel=weight;
  return {pose:result,bob:(Math.cos(TAU*phase*2)-1)*0.009*weight,sway:Math.sin(TAU*phase)*0.017*weight};
 }
 function quietPose(values={}){return pose({joints:[0,0,0,0],lower:[0,0,0,0],side:[0,0,0,0],weapon:0,...values});}
@@ -64,7 +66,7 @@ function formFrames(kind,defender=false){
 function actor(position,yaw,action,scale=1){return {position,rotation:{x:action.lean,y:yaw,z:0},scale,action};}
 
 /** Deterministic, bounded shot. Elapsed time never changes a chess result. */
-export function createChoreography({from,to,defenderFrom,baseYaw=0,defenderYaw=Math.PI,capture=false,kind='p',defenderKind='p',fast=false,reduced=false,legLength=0.26}={}){
+export function createChoreography({from,to,defenderFrom,baseYaw=0,defenderYaw=Math.PI,capture=false,kind='p',defenderKind='p',fast=false,reduced=false,legLength=0.26,legRest}={}){
  from=point(from);to=point(to);const defenderOrigin=point(defenderFrom||to),target=capture?defenderOrigin:to,dx=target.x-from.x,dz=target.z-from.z,distance=Math.hypot(dx,dz),direction=distance>0.00001?{x:dx/distance,z:dz/distance}:{x:0,z:-1};
  const facing=Math.atan2(-direction.x,-direction.z),defenderFacing=facing+Math.PI;
  const duration=reduced?0:fast?(capture?950:620):capture?clamp(8200+distance*300,8500,12200):clamp(1800+distance*620,2200,6200);
@@ -89,7 +91,7 @@ export function createChoreography({from,to,defenderFrom,baseYaw=0,defenderYaw=M
   if(finished)return {finished:true,t,phase:'settled',attacker:actor({...to},baseYaw,pose({joints:[0,0,0,0],lower:[0,0,0,0],side:[0,0,0,0]})),defender:null,camera:{x:0,y:0,z:0},dust:0,collapse:1,chipAge:Infinity,halo:1};
   const walk=ramp(t,0.10,approachEnd),settle=capture?ramp(t,0.90,1):0;
   const traveled=walkDistance*walk+(capture?finalDistance*settle:0),walkWeight=Math.sin(Math.PI*walk)*0.65+Math.min(walk*8,(1-walk)*8,1)*0.35;
-  const gait=kind==='n'?horseWalking(traveled,clamp(walkWeight)):kind==='r'?{pose:quietPose({lean:-Math.sin(Math.PI*walk)*0.018}),bob:Math.sin(traveled*9)*0.004*walkWeight,sway:0}:walking(traveled,clamp(walkWeight),kind,legLength);
+  const gait=kind==='n'?horseWalking(traveled,clamp(walkWeight)):kind==='r'?{pose:quietPose({lean:-Math.sin(Math.PI*walk)*0.018}),bob:Math.sin(traveled*9)*0.004*walkWeight,sway:0}:walking(traveled,clamp(walkWeight),kind,legLength,legRest);
   let action=gait.pose;
   if(kind==='n'&&!capture){
    const flight=Math.sin(Math.PI*ramp(walk,0.08,0.92)),fold=clamp(flight*1.6);
@@ -114,7 +116,7 @@ function applyActor(mesh,actorPose,time=0){
  if(!mesh||!actorPose)return;mesh.position.set(actorPose.position.x,actorPose.position.y,actorPose.position.z);mesh.rotation.set(actorPose.rotation.x,actorPose.rotation.y,actorPose.rotation.z);mesh.scale.setScalar((mesh.userData.baseScale||1)*Math.max(0.001,actorPose.scale));
  const p=actorPose.action,joints=mesh.userData.joints||[],rig=mesh.userData.rig||{},rest=mesh.userData.restJoints||[],restLower=mesh.userData.restLower||[];
  const restValue=value=>typeof value==='number'?value:(value?.x||0);
- for(let i=0;i<joints.length;i++){setRotation(joints[i],[restValue(rest[i])+(p.joints[i]||0),p.twist[i]||0,p.side[i]||0]);const lower=joints[i].userData.lower;if(lower)lower.rotation.x=restValue(restLower[i])+(p.lower[i]||0);if(i<2&&rig.feet?.[i])rig.feet[i].rotation.x=-(p.joints[i]+p.lower[i]);}
+ for(let i=0;i<joints.length;i++){setRotation(joints[i],[restValue(rest[i])+(p.joints[i]||0),p.twist[i]||0,p.side[i]||0]);const lower=joints[i].userData.lower;if(lower)lower.rotation.x=restValue(restLower[i])+(p.lower[i]||0);if(i<2&&rig.feet?.[i])rig.feet[i].rotation.x=-(joints[i].rotation.x+(lower?.rotation.x||0))*p.footLevel;}
  setRotation(rig.chest,[(mesh.userData.restChest||0)+p.chest[0],p.chest[1],p.chest[2]]);setRotation(rig.head,[(mesh.userData.restHead||0)+p.head[0],p.head[1],p.head[2]]);
  // A hand-parented weapon pivot keeps its point in the intended contact plane.
  if(rig.weapon){const restAngle=restValue(rest[3])+restValue(restLower[3]),weight=ramp(time,0,0.10)*(1-ramp(time,0.91,1)),desired=lerp(restAngle,p.weapon,weight);rig.weapon.rotation.x=desired-(joints[3]?.rotation.x||0)-(joints[3]?.userData.lower?.rotation.x||0);}
@@ -122,10 +124,11 @@ function applyActor(mesh,actorPose,time=0){
 function cameraImpact(cinema,a,shot){
  if(!cinema.camera?.position)return;const current=cinema.camera.position,last=a.lastCameraPosition;
  if(!a.cameraBase||last&&Math.hypot(current.x-last.x,current.y-last.y,current.z-last.z)>0.002)a.cameraBase={x:current.x,y:current.y,z:current.z};
- const base=a.cameraBase,offset=shot.camera;
+ const base=a.cameraBase;
  // Overview is the default. A host-controlled optional battle camera is
  // presentation only and returns completely to the seat's overview at the end.
  const enabled=!!(a.battleCamera??cinema.battleCamera)&&!!a.captured&&!a.choreography.fast&&!a.choreography.reduced;
+ const offset=enabled?shot.camera:{x:0,y:0,z:0};
  const push=enabled?ramp(shot.t,0.15,0.40)*(1-ramp(shot.t,0.84,0.99)):0;
  const focus={x:((shot.defender?.position.x??a.to.x)+shot.attacker.position.x)*0.5,y:0.75,z:((shot.defender?.position.z??a.to.z)+shot.attacker.position.z)*0.5},flat=Math.hypot(base.x,base.z)||1;
  const desired={x:focus.x+base.x/flat*5.5,y:focus.y+3.6,z:focus.z+base.z/flat*5.5};
@@ -146,8 +149,8 @@ function stoneChips(cinema,a,shot){
 
 export function advanceCinema(cinema,now){
  const a=cinema.animation;if(!a)return;
- if(!a.choreography){a.defenderFrom=point(a.captured?.position||a.to);a.choreography=createChoreography({from:a.from,to:a.to,defenderFrom:a.defenderFrom,baseYaw:a.baseYaw,defenderYaw:a.captured?.userData.baseYaw||0,capture:!!a.captured,kind:a.moving?.userData.token?.toLowerCase()||'p',defenderKind:a.captured?.userData.token?.toLowerCase()||'p',fast:!!(a.fast||cinema.fast),legLength:a.moving?.userData.rig?.legLength||0.26});a.duration=a.choreography.duration;}
- const shot=a.choreography.sample(Math.max(0,now-a.start));applyActor(a.moving,shot.attacker,shot.t);if(a.captured)applyActor(a.captured,shot.defender,shot.t);cameraImpact(cinema,a,shot);
+ if(!a.choreography){a.defenderFrom=point(a.captured?.position||a.to);a.choreography=createChoreography({from:a.from,to:a.to,defenderFrom:a.defenderFrom,baseYaw:a.baseYaw,defenderYaw:a.captured?.userData.baseYaw||0,capture:!!a.captured,kind:a.moving?.userData.token?.toLowerCase()||'p',defenderKind:a.captured?.userData.token?.toLowerCase()||'p',fast:!!(a.fast||cinema.fast),legLength:a.moving?.userData.rig?.legLength||0.26,legRest:{hips:a.moving?.userData.restJoints,knees:a.moving?.userData.restLower}});a.duration=a.choreography.duration;}
+ const shot=a.choreography.sample(Math.max(0,now-a.start));applyActor(a.moving,shot.attacker,shot.t);if(a.captured){applyActor(a.captured,shot.defender,shot.t);if(!shot.finished)cinema.aimCapture?.(a.moving,a.captured,shot.t);}cameraImpact(cinema,a,shot);
  for(const companion of a.companions||[]){const t=ramp(shot.t,0.10,0.84);companion.mesh.position.set(lerp(companion.from.x,companion.to.x,t),companion.to.y,lerp(companion.from.z,companion.to.z,t));}
  if(a.dust){a.dust.position.y=0.08;a.dust.scale.setScalar(Math.max(0.001,shot.dust*1.4));}if(a.halo)a.halo.scale.setScalar(shot.halo);stoneChips(cinema,a,shot);
  if(!shot.finished)cinema.frame=requestAnimationFrame(()=>{cinema.frame=0;cinema.render();});

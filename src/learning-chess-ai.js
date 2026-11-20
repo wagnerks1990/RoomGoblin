@@ -27,6 +27,11 @@ function selectMove(position,difficulty){
 }
 class ChessComputer{
  constructor({stockfishEnabled=process.env.ROOMGOBLIN_STOCKFISH==='1',stockfish}={}){this.active=0;this.closed=false;this.workers=new Set();this.stockfish=stockfish||new(require('./learning-chess-stockfish').StockfishComputer)({enabled:stockfishEnabled});}
+ async analyze(position,options={}){
+  if(this.closed)throw Object.assign(Error('Computer players are shutting down.'),{status:503});
+  if(Math.max(this.active,this.workers.size+(this.stockfish.jobs?.size||0))>=2)throw Object.assign(Error('Computer players are busy. Try again shortly.'),{status:429});
+  this.active++;try{return await this.stockfish.analyze(position,options);}finally{this.active--;}
+ }
  async choose(position,difficulty,options={}){
   if(!LEVELS.includes(difficulty))throw Object.assign(Error('Choose an available computer level.'),{status:400});
   if(this.closed)throw Object.assign(Error('Computer players are shutting down.'),{status:503});
