@@ -7,7 +7,7 @@ const {createStudentGateway}=require('../../src/learning-public');
 const {createChessPackage}=require('../../src/learning-chess-package');
 const AdmZip=require('adm-zip'),path=require('node:path');
 (async()=>{
- const f=await fixture({beforeAuth:app=>{const express=require('express');app.use('/brand',express.static(path.join(__dirname,'../../public/brand')));app.use('/shared',express.static(path.join(__dirname,'../../public/shared')));}}),browser=await chromium.launch({...(process.env.CHESS_TEST_BROWSER==='chromium'?{}:{channel:'msedge'}),headless:true});
+ const f=await fixture({beforeAuth:app=>{const express=require('express');app.use('/brand',express.static(path.join(__dirname,'../../public/brand')));app.use('/shared',express.static(path.join(__dirname,'../../public/shared')));}}),browser=await chromium.launch({...(process.env.CHESS_TEST_BROWSER==='chromium'?{}:{channel:'msedge'}),headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const errors=[],checks=[];let gateway,proxy,lms;
  const pass=s=>{checks.push(s);console.log('PASS '+s);};
  const listen=server=>new Promise(r=>server.listen(0,'127.0.0.1',()=>r('http://127.0.0.1:'+server.address().port)));

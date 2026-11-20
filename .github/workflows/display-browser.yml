@@ -60,3 +60,44 @@ jobs:
             test-results/workspaces/
             test-results/documents/
           retention-days: 14
+
+  chess-browser:
+    # Keep inside this stable publication-gated workflow; no production dependency.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Select conservative PR validation scope
+        id: scope
+        run: python tools/ci-scope.py
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.full != 'false'
+        with:
+          node-version: '22'
+      - name: Install locked application and isolated chess browser dependencies
+        if: steps.scope.outputs.full != 'false'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test/browser/node --ignore-scripts --no-audit --no-fund
+          node test/browser/node/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Test chess gameplay, SCORM, teaching, privacy and 3D presentation
+        if: steps.scope.outputs.full != 'false'
+        env:
+          CHESS_TEST_BROWSER: chromium
+          NODE_PATH: ${{ github.workspace }}/test/browser/node/node_modules
+        run: |
+          set -euo pipefail
+          for test in \
+            learning-chess-training-smoke \
+            learning-chess-vision-smoke \
+            learning-chess-coach-smoke \
+            learning-chess-computer-cinema-smoke \
+            learning-chess-premove-smoke \
+            chess-cinematic-camera-smoke \
+            chess-cinematic-next-smoke \
+            learning-chess-interaction-smoke \
+            learning-chess-smoke \
+            learning-chess-ux-smoke; do
+            echo "Running ${test}"
+            node "test/browser/${test}.cjs"
+          done

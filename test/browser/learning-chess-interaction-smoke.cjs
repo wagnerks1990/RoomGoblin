@@ -10,7 +10,7 @@ const {randomUUID}=require('node:crypto');
  try{
   const activity=f.learning.createActivity(f.admin,f.classId,{title:'Synthetic interaction chess',templateId:'scorm-connector-v1'});
   f.learning.platform.configure(f.admin,activity,{points:20});
-  browser=await chromium.launch({...(process.env.CHESS_TEST_BROWSER==='chromium'?{}:{channel:'msedge'}),headless:true});
+  browser=await chromium.launch({...(process.env.CHESS_TEST_BROWSER==='chromium'?{}:{channel:'msedge'}),headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   const context=await browser.newContext({hasTouch:true,viewport:{width:1280,height:1000}}),p=await context.newPage();
   p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.message));
   await context.addCookies([{name:'classroom_hub_session',value:f.cookies[f.admin.id].split('=')[1],url:f.base}]);

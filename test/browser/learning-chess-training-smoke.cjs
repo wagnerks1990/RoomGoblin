@@ -51,7 +51,7 @@ const AdmZip=require('adm-zip'),path=require('node:path');
    await scope.locator('#coach-panel>summary').click();
    assert.equal(await scope.locator('#difficulty').inputValue(),'adaptive');
    assert.equal(await scope.locator('#difficulty option').count(),10);
-   const panel=scope.locator('.rg-chess-training');await panel.getByRole('button',{name:'Refresh my coaching profile'}).click();await panel.getByText('practice band',{exact:false}).waitFor();assert.match(await panel.textContent(),/not a measured chess rating/);
+   const panel=scope.locator('.rg-chess-training');await panel.getByRole('button',{name:'Refresh my coaching profile'}).click();await panel.getByText('practice level',{exact:false}).waitFor();assert.match(await panel.textContent(),/not a measured chess rating/);
    await panel.getByRole('button',{name:'Load / refresh my lessons'}).click();
    await panel.locator('select[aria-label="Guided lesson"] option').nth(5).waitFor({state:'attached'});
    assert.equal(await panel.locator('select[aria-label="Guided lesson"] option').count(),6);await panel.locator('.rg-training-recommendations').getByRole('button',{name:'Castle with king and rook'}).click();assert.equal(await panel.locator('select[aria-label="Guided lesson"]').inputValue(),'castle-safely');assert.equal(await panel.locator('.board').isVisible(),false);await panel.locator('select[aria-label="Guided lesson"]').selectOption('escape-check');
