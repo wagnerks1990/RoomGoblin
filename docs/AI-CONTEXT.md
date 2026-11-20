@@ -15,6 +15,23 @@ Optional locally bundled 3D is presentation only; never let animation own result
 or replay skipped revisions. See CHESS-RULES.md and CHESS-CINEMATIC-PLAN.md for
 rules coverage, dead-position limitations and asset licensing.
 
+Chess teaching adds locally packaged guides, lessons and independent questions.
+Its exact POST hint extension accepts only a saved revision, derives the position
+server-side and returns at most three factual legal examples. Require an owned
+active solo/computer game, original assignment bearer, human computer turn and
+available assignment/seat. Deny every multiplayer hint, including teacher seats
+and watchers. Preserve the 12-per-learner/minute bounded limiter and no game,
+clock, grade, attendance or standings mutations. The coach is not a best-move
+engine, a verified mastery score or a route to FIDE titles. See CHESS-TEACHING.md.
+CHESS-REALISM-ASSETS.md records candidates and unverified downloads; do not treat
+a source-page license badge or a public GitHub repository as imported asset rights.
+
+Chess queue cleanup is waiting-only: an unjoined, zero-move multiplayer request
+needs 24 hours without an update or owner heartbeat before expiry. Preserve the
+row, null result, creation idempotency and transactional system audit. The bounded
+minute sweep shares clock freeze/shutdown admission. Never infer forfeiture from
+offline presence or delete active saved games. See CHESS-ENGINE-REVIEW.md.
+
 # AI Project Context
 
 New learning packages use the [direct assignment data API](DIRECT-ASSIGNMENT-API.md):

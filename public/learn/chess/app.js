@@ -1,13 +1,14 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id),base='/api/v1/learning',el=(tag,text)=>{const n=document.createElement(tag);n.textContent=String(text??'');return n;};
- let selected='',classId='',busy=false,closed=false,inFlight=false,pollAgain=false,latest={matches:[],connected:[]},gamesSignature='';
+ let selected='',classId='',busy=false,closed=false,inFlight=false,pollAgain=false,latest={matches:[],connected:[]},gamesSignature='',hintBusy=false,needsSync=true,stateEpoch=0,lastActionError='';
+ const coach=new RGChessCoach($('chess-coach'));
  const msg=text=>$('status').textContent=text;
  const board=new RoomGoblinChessBoard($('board'),{topPlayer:$('player-top'),bottomPlayer:$('player-bottom'),status:$('turn'),promotion:$('promotion'),onViewChange:active=>{$('cinematic').setAttribute('aria-pressed',String(active));$('cinematic').textContent=active?'Switch to 2D':'Fantasy 3D';},onMove:({move,revision,matchId})=>{const m=latest.matches.find(x=>x.id===matchId);return mutate('/teacher/classes/'+(m?.seatClassId||classId)+'/chess/matches/'+matchId+'/move',{move,revision});}});
- function retire(){closed=true;latest={matches:[],connected:[]};board.clear();for(const id of ['games','people','leaderboard','moves','game-title'])$(id).replaceChildren();location.assign('/learn');}
+ function retire(){closed=true;latest={matches:[],connected:[]};RoomGoblinChessUI.closeConfirmation();board.clear();coach.destroy();$('practice-hint').disabled=true;for(const id of ['games','people','leaderboard','moves','game-title'])$(id).replaceChildren();location.assign('/learn');}
  async function request(path,method='GET',body){
   const response=await fetch(base+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-RoomGoblin-Learning':'1'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
-  if(response.status===401||response.status===403){retire();throw Error('Teacher login required.');}
+  if(response.status===401||response.status===403&&method==='GET'){retire();throw Error('Teacher login required.');}
   const data=await response.json();if(!response.ok||data.ok===false)throw Error(data.error||'Chess request was not accepted.');return data;
  }
  function renderLeaderboard(data){
@@ -15,34 +16,53 @@
  }
  async function refreshLeaderboard(){if(closed||document.hidden)return;try{const data=await request('/teacher/chess/leaderboard');if(!closed)renderLeaderboard(data);}catch(e){$('leaderboard-info').textContent=e.message;}}
  function render(){
-  $('active').textContent=latest.matches.filter(m=>m.status==='active').length;$('waiting').textContent=latest.matches.filter(m=>m.status==='waiting').length;$('connected').textContent=latest.connected.length;
-  const sig=JSON.stringify(latest.matches.map(m=>[m.id,m.revision,m.white.name,m.black?.name,m.myColor,selected]));
-  if(sig!==gamesSignature){gamesSignature=sig;const games=$('games');games.replaceChildren();if(!latest.matches.length)games.append(el('p','The arena is ready for its first game.'));
-   for(const m of latest.matches){const b=el('button',m.white.name+' vs '+(m.black?.name||'Waiting for an opponent'));b.type='button';b.dataset.matchId=m.id;b.setAttribute('aria-pressed',String(selected===m.id));b.append(el('span',m.status+' · '+m.mode+(m.mode==='computer'?' · '+m.difficulty:'')));b.lastChild.className='match-meta';b.onclick=()=>{if(m.canJoin){mutate('/teacher/classes/'+classId+'/chess/matches/'+m.id+'/join');return;}selected=m.id;render();};games.append(b);}
+  for(const id of ['queue','computer','solo'])$(id).disabled=inFlight||needsSync||!classId;
+  $('active').textContent=latest.totals?.active??latest.matches.filter(m=>m.status==='active').length;$('waiting').textContent=latest.totals?.waiting??latest.matches.filter(m=>m.status==='waiting').length;$('active-label').textContent=latest.totals?'active in arena':'active shown';$('waiting-label').textContent=latest.totals?'waiting in arena':'waiting shown';$('connected').textContent=latest.connected.length;
+  const state=$('game-state').value,owner=$('game-owner').value,query=$('game-search').value.trim().toLocaleLowerCase(),visible=latest.matches.filter(m=>(state==='all'||state==='open'&&m.status!=='finished'||m.status===state)&&(owner==='all'||owner==='mine'&&m.myColor||owner==='others'&&!m.myColor)&&(!query||(m.white.name+' '+(m.black?.name||'')).toLocaleLowerCase().includes(query)));$('games-shown').textContent=visible.length+' games shown · '+latest.matches.length+' loaded'+(latest.history?' · Recent finishes '+latest.history.returned+' / '+latest.history.total+' (limit '+latest.history.limit+')':'');const ownOpen=(latest.totals?.mineActive??latest.matches.filter(m=>m.myColor&&m.status==='active').length)+(latest.totals?.mineWaiting??latest.matches.filter(m=>m.myColor&&m.status==='waiting').length);$('capacity').textContent=ownOpen+' / 12 open games are yours. Untimed games stay saved until ended; timed clocks can continue while you are away.';for(const id of ['queue','computer','solo']){$(id).disabled=inFlight||needsSync||!classId||ownOpen>=12;$(id).title=ownOpen>=12?'Finish a game or cancel one of your waiting requests before starting another.':'';}
+  const sig=JSON.stringify([state,owner,query,...visible.map(m=>[m.id,m.revision,m.white.name,m.black?.name,m.myColor,m.queueFresh,m.canCancelQueue,selected])]);
+  if(sig!==gamesSignature){gamesSignature=sig;const games=$('games'),focused=games.contains(document.activeElement)?document.activeElement.dataset.matchId:null;games.replaceChildren();if(!visible.length)games.append(el('p','No games match these filters. Change State or Players to see other saved games.'));
+   for(const m of visible){const b=el('button',m.white.name+' vs '+(m.black?.name||'Waiting for an opponent'));b.type='button';b.dataset.matchId=m.id;b.setAttribute('aria-pressed',String(selected===m.id));b.append(el('span',(m.myColor?'Your game · ':'Watch · ')+RoomGoblinChessUI.gameSummary(m)+(m.status==='active'&&m.myColor?' · Saved / resumable':'')+(m.status==='waiting'&&m.queueFresh===false?' · Saved queue · no recent app activity':m.status==='waiting'&&m.queueFresh===true?' · Recent app activity':'')+(m.updatedAt?' · Last activity '+new Date(m.updatedAt).toLocaleString():'')));b.lastChild.className='match-meta';b.onclick=()=>{selected=m.id;render();};games.append(b);}if(focused)games.querySelector('[data-match-id="'+focused+'"]')?.focus({preventScroll:true});
   }
-  const m=latest.matches.find(x=>x.id===selected);$('stage').hidden=!m;$('board-empty').hidden=!!m;
-  if(m){$('game-title').textContent=m.myColor?(m.mode==='computer'?'You vs Computer · '+m.difficulty:m.mode==='solo'?'Solo practice':m.white.name+' vs '+(m.black?.name||'Waiting')):'Watching · '+m.white.name+' vs '+(m.black?.name||'Waiting');board.update(m,{disabled:inFlight});RoomGoblinChessUI.drawControls($('draw-actions'),m,{disabled:inFlight,onAction:body=>mutate('/teacher/classes/'+(m.seatClassId||classId)+'/chess/matches/'+m.id+'/draw',body)});$('leave').disabled=!m.myColor||m.status==='finished'||inFlight;$('leave').onclick=()=>mutate('/teacher/classes/'+(m.seatClassId||classId)+'/chess/matches/'+m.id+'/leave',{revision:m.revision});$('moves').textContent=m.moves.map((x,i)=>(i%2?'':' '+(Math.floor(i/2)+1)+'. ')+x.slice(0,2)+'–'+x.slice(2)).join(' ');}
+  const m=latest.matches.find(x=>x.id===selected);coach.update(m);$('practice-hint').disabled=hintBusy||inFlight||needsSync||!m?.myColor||m.status!=='active'||!['solo','computer'].includes(m.mode)||(m.mode==='computer'&&m.myColor!==m.turn);$('stage').hidden=!m;$('board-empty').hidden=!!m;
+  $('cancel-queue').hidden=!m?.canCancelQueue||!!m?.myColor;$('cancel-queue').disabled=inFlight||needsSync||!m?.canCancelQueue||m.status!=='waiting';$('cancel-queue').onclick=()=>cleanupQueue(m);
+  $('join').hidden=!m?.canJoin;$('join').disabled=inFlight||needsSync||!m?.canJoin;$('join').onclick=()=>{if(m?.canJoin)mutate('/teacher/classes/'+classId+'/chess/matches/'+m.id+'/join');};
+  if(m){$('game-title').textContent=m.myColor?(m.mode==='computer'?'You vs Computer · '+m.difficulty:m.mode==='solo'?'Solo practice':m.white.name+' vs '+(m.black?.name||'Waiting')):'Watching · '+m.white.name+' vs '+(m.black?.name||'Waiting');board.update(m,{disabled:inFlight||needsSync,reconnecting:needsSync,reason:needsSync?'Reconnecting · refreshing the saved board…':'Sending your action…'});RoomGoblinChessUI.drawControls($('draw-actions'),m,{disabled:inFlight||needsSync,onAction:body=>mutate('/teacher/classes/'+(m.seatClassId||classId)+'/chess/matches/'+m.id+'/draw',body)});$('leave').disabled=!m.myColor||m.status==='finished'||inFlight||needsSync;$('leave').textContent=RoomGoblinChessUI.leaveLabel(m);$('leave').onclick=()=>endGame(m);$('moves').textContent=m.moves.map((x,i)=>(i%2?'':' '+(Math.floor(i/2)+1)+'. ')+x.slice(0,2)+'–'+x.slice(2)).join(' ');}
   else{$('game-title').textContent='Your next move starts here.';$('leave').disabled=true;}
   const people=$('people');people.replaceChildren();if(!latest.connected.length)people.append(el('p','No recent connections.'));for(const p of latest.connected)people.append(el('p',p.name+' · '+Math.max(0,Math.round((Date.now()-p.lastSeen)/1000))+'s ago'));
  }
  async function poll(){
-  if(closed||document.hidden)return;if(busy){pollAgain=true;return;}busy=true;
-  try{const data=await request('/teacher/chess');if(closed)return;data.matches=data.matches.map(m=>{const local=latest.matches.find(x=>x.id===m.id);return local&&local.revision>m.revision?local:m;});latest=data;render();msg('Live · Updated '+new Date().toLocaleTimeString());}catch(e){msg(e.message);}finally{busy=false;if(pollAgain){pollAgain=false;poll();}}
+  if(closed||document.hidden)return;if(busy){pollAgain=true;return;}busy=true;const epoch=stateEpoch;
+  try{const data=await request('/teacher/chess');if(closed)return;if(epoch!==stateEpoch){pollAgain=true;return;}needsSync=false;data.matches=data.matches.map(m=>{const local=latest.matches.find(x=>x.id===m.id);return local&&local.revision>m.revision?local:m;});latest=data;render();msg(lastActionError?lastActionError+' · Board refreshed; no action was replayed.':'Live · Updated '+new Date().toLocaleTimeString());}catch(e){if(!closed){needsSync=true;render();msg('Connection not confirmed. '+e.message+' Refresh to reconnect.');}}finally{busy=false;if(pollAgain){pollAgain=false;poll();}}
  }
  async function mutate(path,body={}){
-  if(closed||inFlight)return;inFlight=true;render();
-  try{const r=await request(path,'POST',body);if(closed)return;if(r.match){selected=r.match.id;const i=latest.matches.findIndex(m=>m.id===r.match.id);if(i<0)latest.matches.unshift(r.match);else latest.matches[i]=r.match;}inFlight=false;render();await poll();refreshLeaderboard();}
-  catch(e){inFlight=false;render();msg(e.message);}finally{inFlight=false;}
+  if(closed||inFlight||needsSync)return;const selectedAtStart=selected;stateEpoch++;lastActionError='';inFlight=true;render();
+  try{const r=await request(path,'POST',body);if(closed)return;stateEpoch++;if(r.match){if(selected===selectedAtStart||!selected)selected=r.match.id;const i=latest.matches.findIndex(m=>m.id===r.match.id);if(i<0)latest.matches.unshift(r.match);else latest.matches[i]=r.match;}inFlight=false;needsSync=false;render();await poll();refreshLeaderboard();}
+  catch(e){if(closed)return;stateEpoch++;inFlight=false;needsSync=true;lastActionError=e.message;render();msg(e.message+' · Refreshing the saved board…');await poll();}finally{inFlight=false;}
+ }
+ async function endGame(match){
+  if(closed||inFlight||needsSync||!match.myColor||!await RoomGoblinChessUI.confirmLeave(match))return;const current=latest.matches.find(m=>m.id===match.id);if(closed||inFlight||needsSync||selected!==match.id||current?.revision!==match.revision||current.status==='finished'){msg('The game changed. Review its current state before ending it.');return;}return mutate('/teacher/classes/'+(current.seatClassId||classId)+'/chess/matches/'+current.id+'/leave',{revision:current.revision});
+ }
+ async function cleanupQueue(match){
+  if(closed||inFlight||needsSync||!match?.canCancelQueue||match.status!=='waiting'||!await RoomGoblinChessUI.confirmQueueCleanup(match))return;const current=latest.matches.find(m=>m.id===match.id);if(closed||inFlight||needsSync||selected!==match.id||current?.revision!==match.revision||current.status!=='waiting'||!current.canCancelQueue||!current.cleanupClassId){msg('This queue changed. Review it before removing the waiting request.');return;}return mutate('/teacher/classes/'+current.cleanupClassId+'/chess/matches/'+current.id+'/cancel-queue',{revision:current.revision});
+ }
+ async function requestHint(){
+  const m=latest.matches.find(x=>x.id===selected);if(closed||hintBusy||inFlight||needsSync||!m?.myColor||m.status!=='active'||!['solo','computer'].includes(m.mode)||(m.mode==='computer'&&m.myColor!==m.turn))return;
+  const epoch=stateEpoch;hintBusy=true;$('practice-hint').textContent='Explaining…';render();
+  try{const response=await request('/teacher/classes/'+(m.seatClassId||classId)+'/chess/matches/'+m.id+'/hint','POST',{revision:m.revision});const current=latest.matches.find(x=>x.id===selected);if(!closed&&!inFlight&&!needsSync&&epoch===stateEpoch&&current?.id===response.matchId&&current.revision===response.revision&&coach.showHint(response))$('coach-panel').open=true;}
+  catch(e){if(!closed)msg(e.message);}finally{hintBusy=false;if(!closed){$('practice-hint').textContent='Explain practice position';render();}}
  }
  async function init(){
-  $('cinematic').onclick=()=>board.setCinematic(!board.cinematicMode);$('flip').onclick=()=>board.flip();$('auto-view').onclick=()=>board.resetView();$('effects').onchange=()=>board.setEffects($('effects').checked);$('sound').onchange=()=>board.setSound($('sound').checked);
+  render();
+  $('practice-hint').onclick=requestHint;for(const id of ['game-state','game-owner'])$(id).onchange=render;$('game-search').oninput=render;
+  $('cinematic').onclick=()=>board.setCinematic(!board.cinematicMode);$('flip').onclick=()=>board.flip();$('auto-view').onclick=()=>board.resetView();$('effects').onchange=()=>board.setEffects($('effects').checked);$('sound').onchange=()=>board.setSound($('sound').checked);$('battle-camera').onchange=()=>board.setCinemaOptions({battleCamera:$('battle-camera').checked});$('fast-animation').onchange=()=>board.setCinemaOptions({fast:$('fast-animation').checked});
   $('board-size').oninput=()=>$('stage').style.setProperty('--board-size',$('board-size').value+'px');
   $('expand').onclick=()=>{const expanded=document.body.classList.toggle('board-focus');$('expand').setAttribute('aria-pressed',String(expanded));$('expand').textContent=expanded?'Restore dashboard':'Expand board';};
   $('tv-url').value=new URL('/chess/leaderboard',location.origin).href;$('copy-tv').onclick=async()=>{try{await navigator.clipboard.writeText($('tv-url').value);msg('TV leaderboard URL copied.');}catch{$('tv-url').focus();$('tv-url').select();msg('Select and copy the TV URL shown here.');}};
-  try{const classes=await request('/teacher/classes');for(const c of classes.classes)$('class').append(new Option(c.title,c.id));classId=$('class').value;$('class').onchange=()=>classId=$('class').value;
+  try{const classes=await request('/teacher/classes');for(const c of classes.classes)$('class').append(new Option(c.title,c.id));classId=$('class').value;if(!classes.classes.length){$('class').append(new Option('Create a class in the teacher portal',''));$('class').disabled=true;}$('class').onchange=()=>{classId=$('class').value;render();};
    $('refresh').onclick=()=>{poll();refreshLeaderboard();};$('queue').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'multiplayer',timeControl:$('time-control').value,requestId:RoomGoblinChessUI.requestId()});$('computer').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'computer',difficulty:$('difficulty').value,timeControl:$('time-control').value,requestId:RoomGoblinChessUI.requestId()});$('solo').onclick=()=>mutate('/teacher/classes/'+classId+'/chess',{mode:'solo',timeControl:'none',requestId:RoomGoblinChessUI.requestId()});
    await poll();await refreshLeaderboard();setInterval(poll,2500);setInterval(refreshLeaderboard,10000);setInterval(()=>{if(classId&&!closed&&!document.hidden)request('/teacher/classes/'+classId+'/chess/heartbeat','POST',{}).catch(()=>{});},10000);
   }catch(e){msg(e.message);}
  }
- window.addEventListener('pagehide',()=>{closed=true;board.destroy();});init();
+ window.addEventListener('online',()=>{poll();refreshLeaderboard();});document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();refreshLeaderboard();}});
+ window.addEventListener('pagehide',()=>{closed=true;RoomGoblinChessUI.closeConfirmation();coach.destroy();board.destroy();});init();
 })();

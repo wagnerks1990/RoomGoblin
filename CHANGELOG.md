@@ -5,6 +5,28 @@
 
 ## Unreleased
 
+- Add a Chess Arena teaching companion with piece movement guides, five lesson
+  stages and fourteen independent practice questions. Owned active solo/computer
+  games can request server-derived legal examples without best-move claims;
+  multiplayer, spectators, stale revisions and unavailable assignments are denied.
+  Keep hint budgets bounded, participation grading unchanged and teacher assets
+  excluded from the learner gateway. Document the broader curriculum and realistic
+  asset research; live Schoology, classroom GPU and learning outcomes remain
+  unverified.
+
+- Add clearer saved/active/waiting game views, scoped teacher waiting-request
+  cancellation, safer confirmations and reconnect handling. Expire only unjoined,
+  zero-move waiting requests after 24 hours without an update or owner heartbeat,
+  retaining an audited record without a competitive result. Keep unfinished
+  untimed games resumable and preserve results. Reduce repeated history work with
+  bounded rule-projection caching and indexed lookups.
+
+- Refine optional stone-warrior graphics with horse knights, fortress rooks,
+  articulated capture sequences and reduced-motion controls. Locally bundled
+  carved faces derive from an attributed CC0 MakeHuman head fragment; the rest
+  of the armor, environment and motion are original. Classroom GPU acceptance
+  and film-quality art remain separate from automated validation.
+
 - Improve Chess Arena with mouse/touch dragging, player orientation, board sizing,
   multiple saved games, server clocks, draw claims/agreements and bounded computer
   difficulty levels. Add distinct checkmate/forfeit/timeout and move-average stats,

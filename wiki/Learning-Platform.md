@@ -1,5 +1,10 @@
 # RoomGoblin learning platform
 
+See [Chess Arena and teaching](Chess-Arena) for SCORM chess, the teacher control
+center, practice-only explanations, fair-play boundaries and remaining release
+acceptance. The wider teaching curriculum is a plan, not a title or learning-gain
+claim.
+
 The sole operator workspace is **`/learn`**. It serves directly with normal
 RoomGoblin sign-in, classes, assignments, reviews, classroom controls and setup.
 Retired teacher/platform, standalone discussion, companion and old launcher pages

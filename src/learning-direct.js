@@ -9,7 +9,7 @@ function route(method,path){
  if(leaderboard)return method==='GET'?{id:leaderboard[1],part:'chess'}:null;
  const heartbeat=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/heartbeat$').exec(path);
  if(heartbeat)return method==='POST'?{id:heartbeat[1],part:'chess'}:null;
- const chess=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess(?:/matches/('+uuid+')(?:/(join|move|leave|draw))?)?$').exec(path);
+ const chess=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess(?:/matches/('+uuid+')(?:/(join|move|leave|draw|hint))?)?$').exec(path);
  if(chess){
   const suffix=chess[3]||(!chess[2]?'lobby':'match');
   const allowed=suffix==='lobby'?['GET','POST'].includes(method):suffix==='match'?method==='GET':method==='POST';
@@ -27,7 +27,7 @@ class LearningDirect{
  }
  key(id){return 'learning.direct.'+id;}
  settings(id){return this.store.getPreference(this.key(id),{});}
- available(id){const cfg=this.settings(id);if(!cfg.enabled)return false;const owner=this.store.listUsers().find(u=>u.id===cfg.ownerId&&u.enabled);if(!owner||!this.learning.teacherCapability?.(owner))return false;try{this.learning.activity(owner,id,true);return true;}catch{return false;}}
+ available(id){const cfg=this.settings(id);if(!cfg.enabled||typeof cfg.ownerId!=='string')return false;const owner=this.db.prepare('SELECT id,username,display_name displayName,role,profile_id profileId,enabled FROM users WHERE id=? AND enabled=1').get(cfg.ownerId);if(!owner||!this.learning.teacherCapability?.(owner))return false;try{this.learning.activity(owner,id,true);return true;}catch{return false;}}
  issue(user,id){
   this.learning.activity(user,id,true);
   return this.store.tx(()=>{let key=this.store.getSecret(this.key(id));if(!key){key=crypto.randomBytes(32).toString('hex');this.store.putSecret(this.key(id),key,{purpose:'assignment-enrollment-only'});}this.store.setPreference(this.key(id),{enabled:true,ownerId:user.id});this.learning.event(user,id,'direct.package',id);return key;});

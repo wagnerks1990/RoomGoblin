@@ -74,6 +74,8 @@ const {randomUUID}=require('node:crypto');
   assert.equal(await p.locator('.chess-clock').count(),2);
   pass('A black multiplayer participant sees their side at bottom, opponent move glow and both server clocks');
   assert.equal(await p.locator('#cinematic').count(),1,'The 3D toggle must have a unique control ID');
+  await p.locator('#battle-camera').check();await p.locator('#fast-animation').check();
+  assert.equal(await p.locator('#battle-camera').isChecked(),true);assert.equal(await p.locator('#fast-animation').isChecked(),true);
   await p.locator('#cinematic').click();
   await p.waitForFunction(()=>document.querySelector('.cinematic-mode canvas')||document.querySelector('.cinema-notice')?.textContent.includes('unavailable'));
   if(await p.locator('.cinematic-mode canvas').count()){
