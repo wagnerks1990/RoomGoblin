@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Export the optional SCORM 3D renderer with a standard `.js` filename so LMS
+  hosts that do not recognize `.mjs` can serve it as JavaScript. Test the actual
+  exported Fantasy 3D toggle inside an LMS iframe; preserve assignment identity,
+  saved games, licenses and the teacher renderer route.
+
 - Add a Chess Arena teaching companion with piece movement guides, five lesson
   stages and fourteen independent practice questions. Owned active solo/computer
   games can request server-derived legal examples without best-move claims;

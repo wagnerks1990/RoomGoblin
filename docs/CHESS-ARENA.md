@@ -18,6 +18,14 @@ Three.js, lighting, shadows and capture effects. It remains stylized prototype
 art, not film-quality realism. GPU failure falls back to 2D. See
 [cinematic design and asset licensing](CHESS-CINEMATIC-PLAN.md).
 
+SCORM exports name the bundled renderer `cinematic/view.js` and rewrite only the
+packaged board's import to that path. Some LMS file servers do not recognize
+`.mjs` as JavaScript; browsers reject module imports served with a non-JavaScript
+MIME type. The authenticated Control Center retains its existing `.mjs` route.
+The export regression opens Fantasy 3D inside an LMS iframe whose server only
+recognizes `.js`, then returns to 2D without score changes. This synthetic check
+does not certify the actual Schoology host's MIME, CSP or GPU configuration.
+
 All classes share matchmaking. Each seat retains its original assignment and
 private bearer scope. Both must retain access before matching or moving. Up to
 12 waiting/active games per account are saved, with an instance limit of 250.

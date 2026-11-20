@@ -9,7 +9,10 @@ test('exported cinematic bundle retains model licenses and every asset in its ma
  assert.match(zip.readAsText('cinematic/NOTICE.txt'),/MakeHuman/);
  assert.match(zip.readAsText('cinematic/assets/MAKEHUMAN-NOTICE.txt'),/8e761e6624b8f54536409135d1636da63b32486a90d4897f84e121d144f6fb4c/);
  assert.match(zip.readAsText('cinematic/assets/MAKEHUMAN-CC0.txt'),/CC0/);
- assert.ok(zip.getEntry('cinematic/view.mjs'));
+ assert.ok(zip.getEntry('cinematic/view.js'));
+ assert.ok(!zip.getEntry('cinematic/view.mjs'));
+ assert.match(zip.readAsText('board.js'),/cinematic\/view\.js/);
+ assert.doesNotMatch(zip.readAsText('board.js'),/cinematic\/view\.mjs/);
  assert.ok(zip.getEntry('coach.js'));
  assert.ok(!zip.getEntry('cinematic/assets/stone-head.mjs'),'source model data is already bundled, not separately requested');
  assert.match(manifest,/identifier="RG-CHESS-synthetic-cinema"/);
