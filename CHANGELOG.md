@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Generate bundled 3D renderer UUIDs with Web Crypto rather than weak random
+  words. Apply the guarded patch reproducibly during bundling, retain the full
+  upstream license and fail back to 2D if required browser features are absent.
+
 - Add fixed Normal through Grandmaster computer challenges using a bounded,
   pinned native Stockfish process with matching GPL source in the Hub image.
   Preserve legacy saved levels. New computer games default to Adaptive Live;
