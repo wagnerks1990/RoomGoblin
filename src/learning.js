@@ -162,6 +162,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const direct=new(require('./learning-direct').LearningDirect)(learning);learning.direct=direct;
   const portal=new(require('./learning-teacher-portal').LearningTeacherPortal)(learning);learning.portal=portal;
   const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
+  const training=new(require('./learning-chess-training').ChessTraining)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.training=training;
+  const adaptive=new(require('./learning-chess-adaptive').ChessAdaptive)(learning,{chess,available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()});learning.adaptive=adaptive;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
@@ -275,12 +277,24 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   });
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
   // The chess queue is global, while each move uses the caller's own assignment.
+  app.get(api+'/activities/:id/chess/adaptive',wrap((req,res)=>res.json({ok:true,profile:adaptive.profile(req.learner,req.params.id)})));
+  app.get(api+'/teacher/classes/:id/chess/adaptive',requireTeacher,wrap((req,res)=>res.json({ok:true,profile:adaptive.profile(req.learner,chess.teacherActivity(req.learner,req.params.id),{teacher:true})})));
+  for(const [suffix,method] of [['catalogue','catalogue'],['progress','progress']]){
+    app.get(api+'/activities/:id/chess/training/'+suffix,wrap((req,res)=>res.json({ok:true,...training[method](req.learner,req.params.id)})));
+    app.get(api+'/teacher/classes/:id/chess/training/'+suffix,requireTeacher,wrap((req,res)=>res.json({ok:true,...training[method](req.learner,chess.teacherActivity(req.learner,req.params.id),{teacher:true})})));
+  }
+  app.post(api+'/activities/:id/chess/training/start',wrap((req,res)=>res.json({ok:true,...training.startLesson(req.learner,req.params.id,req.body)})));
+  app.post(api+'/teacher/classes/:id/chess/training/start',requireTeacher,wrap((req,res)=>res.json({ok:true,...training.startLesson(req.learner,chess.teacherActivity(req.learner,req.params.id),req.body,{teacher:true})})));
+  for(const action of ['attempt','hint']){
+    app.post(api+'/activities/:id/chess/training/sessions/:sessionId/'+action,wrap((req,res)=>res.json({ok:true,...training[action](req.learner,req.params.id,req.params.sessionId,req.body)})));
+    app.post(api+'/teacher/classes/:id/chess/training/sessions/:sessionId/'+action,requireTeacher,wrap((req,res)=>res.json({ok:true,...training[action](req.learner,chess.teacherActivity(req.learner,req.params.id),req.params.sessionId,req.body,{teacher:true})})));
+  }
   app.get(api+'/teacher/chess/leaderboard',requireTeacher,wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,null,{teacher:true})})));
   app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>{const matches=chess.teacherList(req.learner),totals=chess.teacherTotals(req.learner);res.json({ok:true,matches,connected:chess.connected(req.learner),totals,history:{limit:100,returned:matches.filter(m=>m.status==='finished').length,total:totals.finished}});}));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/cancel-queue',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.cancelQueue(req.learner,req.params.id,req.params.matchId,req.body)})));
   app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
-    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty||'beginner',timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
+    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
   }));
   app.post(api+'/teacher/classes/:id/chess/heartbeat',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
@@ -306,7 +320,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
-  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty||'beginner',timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})})));
+  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty,timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/leave',wrap((req,res)=>res.json({ok:true,match:chess.leave(req.learner,req.params.id,req.params.matchId,req.body?.revision)})));
@@ -523,7 +537,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       return status===503?'busy':status===429?'budget':requeued?'requeued':'done';
     }
   });
-  const writingClose=retryQueue.close.bind(retryQueue),writingDrain=retryQueue.drain.bind(retryQueue);retryQueue.close=()=>{chess.close();assignmentAI.close();writingClose();};retryQueue.drain=async()=>{await writingDrain();await assignmentAI.drain();};
+  const writingClose=retryQueue.close.bind(retryQueue),writingDrain=retryQueue.drain.bind(retryQueue);retryQueue.close=()=>{chess.close();assignmentAI.close();writingClose();};retryQueue.drain=async()=>{await writingDrain();await assignmentAI.drain();await chess.computer?.drain?.();};
   chess.startClocks(()=>!freezeRequested()&&!reviewOptions.isStopping?.());
   learning.reviewQueue=retryQueue;
   return learning;

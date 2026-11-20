@@ -1,0 +1,8 @@
+{
+  "name": "roomgoblin-chess-browser-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated test-only Playwright runtime for chess browser regression",
+  "engines": { "node": ">=22" },
+  "devDependencies": { "playwright": "1.57.0" }
+}

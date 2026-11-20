@@ -1,4 +1,6 @@
 import { advanceCinema } from './animation.mjs';
+import { confirmedPresentations } from './transitions.mjs';
+import { cameraView, cameraPose } from './camera.mjs';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { HEAD_POSITIONS, HEAD_INDICES } from './assets/stone-head.mjs';
@@ -22,6 +24,7 @@ export class ChessCinema {
     this.disposed = false; this.failed = false; this.frame = 0; this.meshes = new Map(); this.tiles = [];
     this.geometries = new Set(); this.materials = new Set(); this.textures = new Set(); this.animation = null; this.snapshot = null;
     this.motion = matchMedia('(prefers-reduced-motion: reduce)');
+    this.cameraView = cameraView();
     this.canvas = document.createElement('canvas');
     this.canvas.setAttribute('aria-hidden', 'true');
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;touch-action:manipulation;border-radius:12px';
@@ -83,7 +86,7 @@ export class ChessCinema {
       this.dustMaterial = this.material({color:0xb5b1a4,transparent:true,opacity:0.25,depthWrite:false});
       this.raycaster = new THREE.Raycaster(); this.pointer = new THREE.Vector2();
       this.click = event => {
-        if (this.disabled || this.failed || this.disposed || this.cameraBusy&&this.animation || this.battleCamera&&this.animation?.captured) return;
+        if (this.disabled || this.failed || this.disposed || this.presentationQueue || this.cameraBusy&&this.animation || this.battleCamera&&this.animation?.captured) return;
         const r = this.canvas.getBoundingClientRect(); if (!r.width || !r.height) return;
         this.pointer.set((event.clientX-r.left)/r.width*2-1, 1-(event.clientY-r.top)/r.height*2);
         this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -96,6 +99,9 @@ export class ChessCinema {
       this.loss = event => { event.preventDefault(); this.fail('3D graphics became unavailable. The 2D board is ready.'); };
       this.canvas.addEventListener('click', this.click);
       this.canvas.addEventListener('webglcontextlost', this.loss);
+      this.visibility=()=>{if(document.hidden)this.finishPresentation();else this.render();};
+      this.motionChange=()=>{if(this.motion.matches){this.finishPresentation();this.render();}};
+      document.addEventListener('visibilitychange',this.visibility);this.motion.addEventListener('change',this.motionChange);
       container.append(this.canvas);
       this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container);
       this.resize(); this.orientation('white'); this.render();
@@ -300,8 +306,10 @@ export class ChessCinema {
     mesh.userData.rig?.chest?.rotation.set(mesh.userData.restChest||0,0,0);mesh.userData.rig?.head?.rotation.set(mesh.userData.restHead||0,0,0);
   }
   finishPresentation(){
-    const a=this.animation;if(!a)return;if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;
+    const a=this.animation,queued=this.presentationQueue;this.presentationQueue=null;if(!a&&!queued)return;if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;
+    if(queued){this.presentPosition(queued.match,position(queued.match.fen),null);this.animation=null;this.cameraBusy=false;this.orientation(this.viewSide||'white');return;}
     if(a.moving)a.moving.position.copy(a.to);this.restFigure(a.moving);this.bakeFigure(a.moving);
+    for(const companion of a.companions||[]){companion.mesh.position.copy(companion.to);this.restFigure(companion.mesh);this.bakeFigure(companion.mesh);}
     for(const mesh of [a.captured,a.halo,a.dust,...(a.chips||[])])if(mesh){this.pieces.remove(mesh);this.disposeGeometry(mesh);}
     this.animation=null;this.cameraBusy=false;this.orientation(this.viewSide||'white');
   }
@@ -311,54 +319,83 @@ export class ChessCinema {
     }return chips;
   }
   orientation(side) {
-    this.viewSide=side==='black'?'black':'white';const sign=this.viewSide==='black'?-1:1; this.camera.position.set(0,10.8,sign*11.9); this.camera.lookAt(0,0.15,0);
+    const next=side==='black'?'black':'white',changed=this.viewSide!==next;this.viewSide=next;
+    // Same-state polling must not pull an active cinematic camera back to its
+    // overview; manual controls and seat changes explicitly replace the base.
+    if(changed||!this.animation)this.applyCameraView();
+  }
+  getCameraView(){return {...this.cameraView};}
+  setCameraView(options={}){
+    if(this.disposed||this.failed)return this.getCameraView();
+    this.cameraView=cameraView(this.cameraView,options);this.applyCameraView();this.render();return this.getCameraView();
+  }
+  resetCameraView(){return this.setCameraView({preset:'angled'});}
+  applyCameraView(){
+    if(!this.camera)return;
+    const pose=cameraPose(this.cameraView,this.viewSide,this.camera.aspect,this.camera.fov);
+    this.camera.position.set(pose.position.x,pose.position.y,pose.position.z);
+    this.camera.lookAt(pose.target.x,pose.target.y,pose.target.z);
+    const distance=this.camera.position.distanceTo(new THREE.Vector3(pose.target.x,pose.target.y,pose.target.z));
+    const far=Math.max(60,distance+30);if(this.camera.far!==far){this.camera.far=far;this.camera.updateProjectionMatrix();}
+    if(this.scene?.fog){this.scene.fog.near=Math.max(17,distance+2);this.scene.fog.far=Math.max(35,distance+20);}
+    if(this.animation)this.animation.cameraBase={...pose.position};
   }
   resize() {
     if(this.disposed||this.failed)return;
     const r=this.container.getBoundingClientRect(); if(!r.width||!r.height)return;
-    this.renderer.setSize(r.width,r.height,false);this.camera.aspect=r.width/r.height;this.camera.updateProjectionMatrix();this.render();
+    this.renderer.setSize(r.width,r.height,false);this.camera.aspect=r.width/r.height;this.camera.updateProjectionMatrix();this.applyCameraView();this.render();
   }
-  update(match, {orientation='white',effects=true,selected=null,targets=[],disabled=false,fast,battleCamera}={}) {
+  nextPresentation(){
+    const queued=this.presentationQueue;this.presentationQueue=null;if(!queued)return;
+    if(this.disposed||this.failed)return;
+    const move=this.motion.matches||document.hidden?null:queued.move;
+    this.presentPosition(queued.match,position(queued.match.fen),move);this.render();
+  }
+  presentPosition(match,next,move){
+    const animate=!!move,from=move?.slice(0,2),to=move?.slice(2,4);
+    const mover=this.meshes.get(from)?.userData.token;
+    const captureSquare=animate?[...this.meshes.keys()].find(s=>{
+      const token=this.meshes.get(s).userData.token;
+      return mover&&(token===token.toUpperCase())!==(mover===mover.toUpperCase())&&(!next.has(s)||s===to&&token!==next.get(s));
+    }):null;
+    let captured=null;
+    if(captureSquare){const token=this.meshes.get(captureSquare).userData.token;captured=this.figure(token);captured.position.copy(point(captureSquare));captured.userData.square=captureSquare;}
+    const rook=animate&&mover?.toLowerCase()==='k'&&Math.abs(from.charCodeAt(0)-to.charCodeAt(0))===2?{from:(to[0]==='g'?'h':'a')+from[1],to:(to[0]==='g'?'f':'d')+from[1]}:null;
+    // Replace the old presentation completely; newer confirmed state always wins.
+    for(const mesh of [...this.pieces.children]){this.pieces.remove(mesh);this.disposeGeometry(mesh);}
+    if(captured)this.pieces.add(captured);
+    this.meshes.clear();this.animation=null;
+    for(const [square,token]of next){const mesh=this.figure(token);mesh.userData.square=square;mesh.position.copy(point(square));this.pieces.add(mesh);this.meshes.set(square,mesh);if(!animate||square!==to&&square!==rook?.to)this.bakeFigure(mesh);}
+    if(!animate)return;
+    const moving=this.meshes.get(to),start=point(from),end=point(to);if(!moving)return;
+    moving.position.copy(start);const companions=[];
+    if(rook){const mesh=this.meshes.get(rook.to);if(mesh){mesh.position.copy(point(rook.from));companions.push({mesh,from:point(rook.from),to:point(rook.to)});}}
+    let halo=null;
+    if(match.reason==='checkmate'){
+      const king=[...this.meshes.values()].find(mesh=>mesh.userData.token===(match.result==='white'?'k':'K'));
+      if(king){halo=this.part(this.pieces,new THREE.TorusGeometry(0.45,0.045,6,32),this.gold,king.position.x,0.14,king.position.z);halo.rotation.x=-Math.PI/2;}
+    }
+    let dust=null;if(captured){dust=this.part(this.pieces,new THREE.TorusGeometry(0.32,0.065,6,24),this.dustMaterial,end.x,0.12,end.z);dust.rotation.x=-Math.PI/2;dust.scale.setScalar(0.01);}
+    const baseYaw=moving.userData.baseYaw||0,facing=Math.atan2(-(end.x-start.x),-(end.z-start.z)),yawDelta=((facing-baseYaw+Math.PI*3)%(Math.PI*2))-Math.PI;
+    this.animation={start:performance.now(),moving,from:start,to:end,captured,companions,halo,dust,baseYaw,yawDelta,fast:!!this.fast};
+  }
+  update(match, {orientation='white',effects=true,animate=true,selected=null,targets=[],disabled=false,fast,battleCamera}={}) {
     if(this.disposed||this.failed)return;
     try {
       this.disabled=disabled;if(fast!==undefined)this.fast=!!fast;if(battleCamera!==undefined)this.battleCamera=!!battleCamera;this.orientation(orientation);
-      if(this.animation&&(!effects||this.motion.matches||document.hidden||fast===true&&!this.animation.choreography?.fast))this.finishPresentation();
+      if(this.animation&&(!effects||!animate||this.motion.matches||document.hidden||fast===true&&!this.animation.choreography?.fast))this.finishPresentation();
       const next=position(match?.fen),moves=Array.isArray(match?.moves)?match.moves:[];
       const identity=match?.id,revision=match?.revision;
       const changed=!this.snapshot||this.snapshot.fen!==match.fen||this.snapshot.id!==identity||this.snapshot.revision!==revision;
       if(changed){
+        if(this.presentationQueue){this.presentationQueue=null;this.presentPosition(this.snapshot,position(this.snapshot.fen),null);}
         if(this.animation?.moving){this.animation.moving.position.copy(this.animation.to);this.restFigure(this.animation.moving);}
         this.animation=null;this.cameraBusy=false;
         const old=this.snapshot;
-        const contiguous=old&&old.id===identity&&Number.isSafeInteger(revision)&&revision===old.revision+1&&moves.length===old.moves.length+1&&old.moves.every((m,i)=>m===moves[i]);
-        const move=contiguous&&/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(moves.at(-1))?moves.at(-1):null;
-        const animate=move&&effects&&!this.motion.matches&&!document.hidden;
-        const from=move?.slice(0,2),to=move?.slice(2,4);
-        const mover=this.meshes.get(from)?.userData.token;
-        const captureSquare=animate?[...this.meshes.keys()].find(s=>{
-          const token=this.meshes.get(s).userData.token;
-          return mover&&(token===token.toUpperCase())!==(mover===mover.toUpperCase())&&(!next.has(s)||s===to&&token!==next.get(s));
-        }):null;
-        let captured=null;
-        if(captureSquare){const token=this.meshes.get(captureSquare).userData.token;captured=this.figure(token);captured.position.copy(point(captureSquare));captured.userData.square=captureSquare;}
-        // Dispose replaced geometry; only the final snapshot survives interrupted animation.
-        for(const mesh of [...this.pieces.children]){this.pieces.remove(mesh);this.disposeGeometry(mesh);}
-        if(captured)this.pieces.add(captured);
-        this.meshes.clear();
-        for(const [square,token]of next){const mesh=this.figure(token);mesh.userData.square=square;mesh.position.copy(point(square));this.pieces.add(mesh);this.meshes.set(square,mesh);if(!animate||square!==to)this.bakeFigure(mesh);}
-        if(animate){
-          const moving=this.meshes.get(to),start=point(from),end=point(to);
-          if(moving)moving.position.copy(start);
-          let halo=null;
-          if(match.reason==='checkmate'){
-            const king=[...this.meshes.values()].find(mesh=>mesh.userData.token===(match.result==='white'?'k':'K'));
-            if(king){halo=this.part(this.pieces,new THREE.TorusGeometry(0.45,0.045,6,32),this.gold,king.position.x,0.14,king.position.z);halo.rotation.x=-Math.PI/2;}
-          }
-          let dust=null;if(captured){dust=this.part(this.pieces,new THREE.TorusGeometry(0.32,0.065,6,24),this.dustMaterial,end.x,0.12,end.z);dust.rotation.x=-Math.PI/2;dust.scale.setScalar(0.01);}
-          const baseYaw=moving?.userData.baseYaw||0,facing=Math.atan2(-(end.x-start.x),-(end.z-start.z));
-          const yawDelta=((facing-baseYaw+Math.PI*3)%(Math.PI*2))-Math.PI;
-          this.animation={start:performance.now(),duration:captured?1400:1000,moving,from:start,to:end,captured,halo,dust,baseYaw,yawDelta};
-        } else if(captured){this.pieces.remove(captured);this.disposeGeometry(captured);}
+        const presentations=confirmedPresentations(old,match,{animate:animate&&effects&&!this.motion.matches&&!document.hidden});
+        this.presentationQueue=presentations.length===2?{match:{...match,moves:moves.slice()},move:presentations[1].move}:null;
+        const first=presentations[0];
+        this.presentPosition(this.presentationQueue?{...match,reason:null,result:null}:match,first?position(first.fen):next,first?.move||null);
         this.snapshot={id:identity,fen:match.fen,revision,moves:moves.slice()};
       }
       this.disposeGeometry(this.overlays);this.overlays.clear();
@@ -378,13 +415,14 @@ export class ChessCinema {
       this.renderer.render(this.scene,this.camera);
     } catch(error){this.fail('3D graphics stopped. Continue using the 2D board.');}
   }
-  fail(message){if(this.failed||this.disposed)return;this.failed=true;this.cameraBusy=false;if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.onFailure(message);}
+  fail(message){if(this.failed||this.disposed)return;this.failed=true;this.presentationQueue=null;this.cameraBusy=false;if(this.frame)cancelAnimationFrame(this.frame);this.frame=0;this.onFailure(message);}
   destroy(){
     if(this.disposed)return;this.disposed=true;if(this.frame)cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();this.canvas?.removeEventListener('click',this.click);this.canvas?.removeEventListener('webglcontextlost',this.loss);
+    document.removeEventListener('visibilitychange',this.visibility);this.motion.removeEventListener('change',this.motionChange);
     for(const tile of this.tiles)if(tile.isInstancedMesh)tile.dispose();
     for(const geometry of this.geometries)geometry.dispose();for(const material of this.materials)material.dispose();for(const texture of this.textures)texture.dispose();
-    this.geometries.clear();this.materials.clear();this.textures.clear();this.renderer?.dispose();this.canvas?.remove();this.meshes.clear();this.animation=null;
+    this.geometries.clear();this.materials.clear();this.textures.clear();this.renderer?.dispose();this.canvas?.remove();this.meshes.clear();this.animation=null;this.presentationQueue=null;
   }
 }
 export const THREE_VERSION = VERSION;

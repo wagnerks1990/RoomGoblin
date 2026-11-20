@@ -18,13 +18,50 @@ cinema.update(match, {
 cinema.destroy();
 ```
 
+### Adjustable camera
+
+The renderer exposes `getCameraView()`, `setCameraView(patch)` and
+`resetCameraView()`. Camera settings are presentation only. Presets are `angled`
+(58-degree elevation), `overhead` (88 degrees) and `player` (38 degrees).
+Selecting a preset resets orbit and zoom; individual slider patches preserve the
+other settings. Orbit is relative to the player's seat, bounded to -180..180
+degrees; elevation is bounded to 25..88 degrees and zoom to 0.7..1.6.
+
+```js
+cinema.setCameraView({ preset: 'overhead' });
+cinema.setCameraView({ orbit: 35, tilt: 65, zoom: 1.1 });
+```
+
+`camera.mjs` fits the board border and tall pieces to the current viewport at
+zoom 1, without wasting space fitting the decorative columns. Deliberate zoom-in
+may crop the board; Reset returns to the angled fit while preserving the current
+white/black seat orientation. Same-state polling never resets chosen controls or
+pulls an active battle camera back to the overview. A temporary battle shot
+returns to the chosen camera base. Resize updates the fit without discarding
+preferences; camera changes render on demand and do not alter game state.
+
+Pure projection regressions cover every preset, multiple orbits and aspect
+ratios, finite input bounds and mirrored player orientation. The separate
+`test/browser/chess-cinematic-camera-smoke.cjs` fixture exercises actual camera
+matrices, polling, black-side rotated picking, resize/reset and resource cleanup.
+
 The container supplies width and height. `onSquare(square)` is only a selection
 callback: the existing board/controller must perform server validation and turn
 authorization. The match contains confirmed `id`, `fen`, `moves` (UCI strings),
 `revision`, `result` and `reason`. The renderer never submits requests or chooses
 legal moves. Only exactly contiguous revisions with one appended confirmed move
-animate; first loads, reconnect gaps and changed matches snap to the latest board.
-Newer snapshots cancel old animation. Visual animation never delays server moves.
+animate. Computer play is the one bounded exception: the server atomically
+commits the human move and computer reply under one new revision. An exact
+two-move history extension in computer mode presents those two confirmed moves
+in sequence, with at most one queued successor. A visual-only UCI projection
+must reconstruct the exact server-supplied final piece placement; otherwise it
+snaps. This is not a second legal-move engine or a predicted computer reply.
+Castling moves the rook with the king. First loads, reconnects (`animate:false`),
+revision gaps and changed matches snap to the latest board. Same-state polling
+preserves presentation progress. Newer snapshots cancel old animation and settle
+any intermediate computer diagram before presenting the newer state. Effects off,
+reduced motion and hidden pages settle the complete confirmed state. Visual
+animation never delays server moves, grading, clocks or match results.
 
 All six piece types are original procedural humanoid stone statues: pawn infantry
 with spear/shield, crowned king/queen warriors, robed bishop, armored horse-crest

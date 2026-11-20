@@ -1,0 +1,23 @@
+.rg-chess-vision{font-family:system-ui,sans-serif;color:#edf8f5;border:1px solid #52796e;border-radius:12px;padding:16px;background:#142d2b;max-width:100%;box-sizing:border-box;line-height:1.5}
+.rg-chess-vision *{box-sizing:border-box}
+.rg-chess-vision h3{margin:0 0 8px;font-size:1.12rem}
+.rg-chess-vision p{margin:10px 0}
+.rg-chess-vision .vision-options,.rg-chess-vision .vision-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.rg-chess-vision label{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.95rem}
+.rg-chess-vision select,.rg-chess-vision .vision-actions button{font:inherit;color:#f4fbf8;background:#203d3a;border:1px solid #74968d;border-radius:7px;min-height:42px;padding:7px 10px;max-width:100%}
+.rg-chess-vision input[type=checkbox]{width:20px;height:20px;accent-color:#67e0bd}
+.rg-chess-vision .vision-prompt{font-size:1.3rem;font-weight:750;letter-spacing:.02em;color:#a8f3d8;min-height:2em}
+.rg-chess-vision .vision-board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));width:min(100%,420px);aspect-ratio:1;border:3px solid #89a99f;border-radius:4px;overflow:hidden}
+.rg-chess-vision .vision-square{display:flex;justify-content:center;align-items:center;width:100%;min-width:0;min-height:0;aspect-ratio:1;padding:0;margin:0;border:0;border-radius:0;font:700 clamp(.7rem,2.8vw,1rem)/1 system-ui;color:#09241d;position:relative;touch-action:manipulation;cursor:pointer}
+.rg-chess-vision .vision-square.light{background:#d6e6d9}.rg-chess-vision .vision-square.dark{background:#466c5d;color:#fff}
+.rg-chess-vision .hide-square-names .vision-square-name{visibility:hidden}
+.rg-chess-vision .vision-square[aria-disabled=true]{cursor:default}
+.rg-chess-vision .vision-square.last-correct::after{content:'✓';position:absolute;right:2px;top:1px;font-size:1rem;color:#062f22;background:#b2f7d8;border-radius:50%;line-height:1.1}
+.rg-chess-vision .vision-square.last-wrong::after{content:'×';position:absolute;right:2px;top:1px;font-size:1rem;color:#341708;background:#ffd6a7;border-radius:50%;line-height:1.1}
+.rg-chess-vision .vision-feedback{min-height:3em;padding:8px 10px;background:#1b3934;border-radius:7px}
+.rg-chess-vision .vision-clock{font-variant-numeric:tabular-nums;color:#c7e9de}
+.rg-chess-vision .vision-results{font-weight:700}.rg-chess-vision .vision-note{font-size:.88rem;color:#c6dcd5}
+.rg-chess-vision button:focus-visible,.rg-chess-vision select:focus-visible,.rg-chess-vision input:focus-visible{outline:3px solid #ffe18e;outline-offset:2px}
+.rg-chess-vision .vision-square:focus-visible{outline:3px solid #ffdf80;outline-offset:-4px;z-index:1}
+.rg-chess-vision button:disabled,.rg-chess-vision select:disabled{opacity:.65;cursor:default}
+@media(max-width:480px){.rg-chess-vision{padding:10px}.rg-chess-vision .vision-options{align-items:stretch}.rg-chess-vision .vision-options>label{max-width:100%}.rg-chess-vision .vision-actions{gap:7px}.rg-chess-vision .vision-actions button{flex:1 1 auto;padding:7px}}

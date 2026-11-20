@@ -21,8 +21,26 @@ server-side and returns at most three factual legal examples. Require an owned
 active solo/computer game, original assignment bearer, human computer turn and
 available assignment/seat. Deny every multiplayer hint, including teacher seats
 and watchers. Preserve the 12-per-learner/minute bounded limiter and no game,
-clock, grade, attendance or standings mutations. The coach is not a best-move
+clock, grade, attendance or standings mutations. Actual position hints now record
+private assistance provenance so they cannot inflate adaptive strength evidence.
+The coach is not a best-move
 engine, a verified mastery score or a route to FIDE titles. See CHESS-TEACHING.md.
+
+Adaptive Live is the default only for newly created computer games. Preserve old
+difficulty IDs, exact saved histories and server CAS commits. Adaptive Practice
+holds its initial band/style; Live/Coach may change bounded settings per reply.
+Keep private profile and last-decision projections owner-only. Aggregate trends
+must not reveal names, IDs, cross-class records or counts. Do not claim online
+NNUE training or measured Elo. Native engine work stays outside SQLite
+transactions and shares the two-search budget with legacy workers. `close`
+cancels; ordinary `drain` waits and must never cancel accepted searches. Ship
+matching GPL source and notices with the pinned engine. Read
+CHESS-ADAPTIVE-BOTS-RESEARCH.md and CHESS-ENGINE-SOURCE.md.
+
+Guided training has a separate exact route allowlist, server-owned positions and
+objectives, private revisioned sessions and assisted progress. No lesson, vision
+round or profile changes SCORM grades or multiplayer results. Preserve the
+original assignment capability/bearer and teacher-only chess workspace.
 CHESS-REALISM-ASSETS.md records candidates and unverified downloads; do not treat
 a source-page license badge or a public GitHub repository as imported asset rights.
 
@@ -33,6 +51,15 @@ minute sweep shares clock freeze/shutdown admission. Never infer forfeiture from
 offline presence or delete active saved games. See CHESS-ENGINE-REVIEW.md.
 
 # AI Project Context
+
+Chess presentation supports adjustable local cameras and exact confirmed atomic
+computer-pair animation. Never replay reconnect gaps or let visual queues delay
+server authority. Multiplayer premoves are one ephemeral intent, scoped to the
+own seat and exact match, revalidated against fresh server legal moves and sent
+once through the existing revision-checked endpoint. Cancel on disabled, hidden,
+blurred, changed or disconnected state; never persist or retry. See CHESS-ARENA.md.
+CHESS-COM-FEATURE-ROADMAP.md and CHESS-COM-PLAY-FEATURES-RESEARCH.md are dated
+public-source research and proposed priorities, not implemented coach/analysis APIs.
 
 New learning packages use the [direct assignment data API](DIRECT-ASSIGNMENT-API.md):
 no preapproved roster, signed launch, companion window or cookie dependency.

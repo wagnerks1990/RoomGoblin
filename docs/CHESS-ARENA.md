@@ -26,6 +26,35 @@ The export regression opens Fantasy 3D inside an LMS iframe whose server only
 recognizes `.js`, then returns to 2D without score changes. This synthetic check
 does not certify the actual Schoology host's MIME, CSP or GPU configuration.
 
+### Camera, animations and premoves
+
+The optional 3D view offers angled, overhead and player presets plus rotation,
+tilt, zoom and reset controls in both teacher and SCORM interfaces. Settings stay
+in the current page and survive polling and switching between 2D and 3D. Computer
+responses commit two plies under one revision; the renderer presents that exact
+confirmed pair in sequence rather than suppressing it. Castling also animates
+the rook. Reconnect, hidden pages, reduced motion and newer state cancel obsolete
+presentation; neither animation nor camera motion owns chess rules or clocks.
+
+Owned active multiplayer games support one local premove while the opponent is
+thinking. Select or drag your own piece and choose a destination; the queued
+squares and Cancel premove control identify the intent. Escape also cancels it.
+The next confirmed turn must preserve the game, own seat, scope and move-history
+prefix, and contain that move in the server-provided legal move list. The existing
+move endpoint still checks legality, turn and revision. A queued move is sent once
+only; rejected moves are not retried. No fixed artificial time deduction is added:
+the existing server clock, including normal network and polling delay, applies.
+
+Premoves are not persisted, multi-step plans or coaching. They cancel on game or
+identity changes, pause/read-only/reconnecting state, hidden or unfocused windows,
+finished games, inconsistent history or an illegal resulting move. This first
+implementation is multiplayer-only; computer games remain an atomic request and
+response and do not expose a separately playable opponent-thinking turn.
+
+The next-phase feature proposals are in [the learning roadmap](CHESS-COM-FEATURE-ROADMAP.md)
+and [the gameplay research inventory](CHESS-COM-PLAY-FEATURES-RESEARCH.md). They are
+research, not a claim of implemented functionality.
+
 All classes share matchmaking. Each seat retains its original assignment and
 private bearer scope. Both must retain access before matching or moving. Up to
 12 waiting/active games per account are saved, with an instance limit of 250.
@@ -47,11 +76,41 @@ never declare wins. Timed games continue while disconnected. Assignment pauses
 or closure suspend clocks when reconciled. Clock processing respects writer
 freezes and shutdown admission; failures remain visible. Server downtime is
 charged from stored wall-clock anchors on restart; reliable system time matters.
-Beginner, Standard and Advanced computer levels use bounded worker-thread search,
-not rated strength claims. Participation grading remains five validated player
+Legacy Beginner, Standard and Advanced saved games retain bounded worker-thread
+search. New fixed Normal through Grandmaster challenges use the separately
+packaged Stockfish engine. These labels are not rated strength claims.
+Participation grading remains five validated player
 moves at four points each, capped at 20; winning is never required.
 
 ## Teaching and practice explanations
+
+New computer games default to **Adaptive Live**. It combines the participant's
+recent private outcome evidence with a bounded position signal on each reply:
+material balance can move the challenge one band, and check/material conditions
+can change style. **Adaptive Practice** snapshots its band/style when created and
+keeps those settings throughout that game. **Adaptive Coach** adds the teaching
+panel to live adaptation; opening that panel alone is not recorded as assistance.
+Actual position hints mark the game assisted. Existing saved game difficulty IDs
+and boards are preserved.
+
+The server selects only legal engine-evaluated candidates within a small score
+window; incomplete or mate-valued candidate sets retain the engine's choice.
+Native work is bounded and failure leaves the saved board unchanged. Individual
+profiles stay within the original participant/assignment. Shared opening trends
+influence style only after ten eligible games and five distinct accounts; no
+other player's profile or history is returned. Completed results are summarized
+once, while five historical games at most are summarized per minute by the
+freeze-aware chess maintenance timer. Historical computer games with unknown
+assistance cannot estimate strength. This is adaptive selection, not online
+neural-network retraining. See [adaptive design](CHESS-ADAPTIVE-BOTS-RESEARCH.md).
+
+Six original guided drills validate attempts on the server and save private,
+assistance-aware progress. Their start/attempt/hint routes use revisions and
+request IDs, scoped private bearers, availability checks and transactional audit.
+They never change live matches or grades. Local Square finder practice adds
+untimed or 30/60-second coordinate rounds without persistent scoring or network
+calls. See [practice lifecycle](CHESS-VISION-PRACTICE.md) and the
+[implementation status](CHESS-ROADMAP-STATUS.md).
 
 The teaching companion includes six piece guides, five lesson stages (basics,
 safety, tactics, strategy and endgames), fourteen independent practice questions

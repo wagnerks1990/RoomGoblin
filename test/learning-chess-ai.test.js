@@ -1,11 +1,13 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {parse,legal,uci,START}=require('../src/learning-chess');
-const {ChessComputer,LEVELS,selectMove}=require('../src/learning-chess-ai');
+const {ChessComputer,LEVELS,LEGACY_LEVELS,selectMove}=require('../src/learning-chess-ai');
 
-test('computer levels are fixed and every level chooses a server-legal move',()=>{
- assert.deepEqual(LEVELS,['beginner','standard','advanced']);
- for(const level of LEVELS)for(const position of [START,'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2'])assert.ok(legal(parse(position)).map(uci).includes(selectMove(position,level)),level);
+test('legacy computer levels retain saved identifiers and choose server-legal moves',()=>{
+ assert.deepEqual(LEGACY_LEVELS,['beginner','standard','advanced']);
+ assert.equal(new Set(LEVELS).size,LEVELS.length);
+ for(const level of LEGACY_LEVELS)for(const position of [START,'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2'])assert.ok(legal(parse(position)).map(uci).includes(selectMove(position,level)),level);
+ for(const level of ['normal','grandmaster','adaptive','adaptive-practice','adaptive-coach']){assert.ok(LEVELS.includes(level));assert.throws(()=>selectMove(START,level));}
  assert.throws(()=>selectMove(START,'arbitrary-script'));
 });
 
