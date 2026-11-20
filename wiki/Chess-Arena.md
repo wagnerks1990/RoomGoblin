@@ -29,4 +29,3 @@ Source documentation:
 - [Teaching curriculum and fair-play contract](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/CHESS-TEACHING.md)
 - [Rules audit](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/CHESS-RULES.md)
 - [Realistic character asset research](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/CHESS-REALISM-ASSETS.md)
-
