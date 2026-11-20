@@ -54,6 +54,18 @@ RUN npm ci --ignore-scripts
 COPY public/display/sendspin-entry.js ./public/display/sendspin-entry.js
 RUN npx --no-install esbuild public/display/sendspin-entry.js --bundle --format=esm --target=es2022 --outfile=public/display/sendspin.bundle.js
 
+FROM node:22-bookworm-slim AS chess-engine-source
+# Keep exact corresponding source, Debian build rules/patches and network with
+# the redistributed GPL engine. APT verifies source hashes against signed indices.
+RUN printf 'deb-src [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main\n' > /etc/apt/sources.list.d/chess-source.list \
+ && apt-get update \
+ && mkdir -p /out \
+ && cd /out \
+ && apt-get source --download-only stockfish=15.1-4 \
+ && test -s stockfish_15.1-4.dsc \
+ && test -s stockfish_15.1.orig.tar.gz \
+ && test -s stockfish_15.1-4.debian.tar.xz
+
 FROM node:22-bookworm-slim
 
 WORKDIR /app
@@ -70,7 +82,14 @@ RUN apt-get update \
       util-linux \
       ca-certificates \
       python3-venv \
+      stockfish=15.1-4 \
  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=chess-engine-source /out/ /usr/share/doc/roomgoblin-stockfish/source/
+COPY docs/CHESS-ENGINE-SOURCE.md /usr/share/doc/roomgoblin-stockfish/README.md
+RUN mkdir -p /usr/local/libexec/roomgoblin-stockfish \
+ && ln -s /usr/games/stockfish /usr/local/libexec/roomgoblin-stockfish/stockfish \
+ && test -s /usr/share/doc/stockfish/copyright
 
 COPY src/esphome/requirements.txt /tmp/esphome-requirements.txt
 RUN python3 -m venv /opt/esphome \
@@ -86,6 +105,10 @@ RUN npm ci --omit=dev --ignore-scripts \
 
 COPY VERSION ./VERSION
 COPY src ./src
+# Exercise the actual shipped engine under the same bounded adapter as gameplay.
+COPY test/learning-chess-stockfish-native.test.js ./test/learning-chess-stockfish-native.test.js
+RUN ROOMGOBLIN_TEST_NATIVE_STOCKFISH=1 node --test test/learning-chess-stockfish-native.test.js \
+ && rm /app/test/learning-chess-stockfish-native.test.js
 # Run native-client contract tests in the exact Python/runtime image being shipped.
 # Test sources are removed from the final image and do not touch physical devices.
 COPY test/esphome_worker_test.py ./test/esphome_worker_test.py
@@ -148,6 +171,7 @@ RUN groupadd --gid 10001 classroom-hub \
  && chown -R 10001:10001 /app/data /tmp/classroom-hub
 
 ENV NODE_ENV=production
+ENV ROOMGOBLIN_STOCKFISH=1
 ENV HOME=/tmp/classroom-hub
 EXPOSE 3000 3020
 

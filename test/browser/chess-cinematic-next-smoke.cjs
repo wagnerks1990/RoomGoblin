@@ -25,6 +25,26 @@ for(const move of ['e2e4','d7d5','e4d5','g8f6']){const old=states.at(-1),next=pl
   },states);
   await page.mouse.click(initial.click.x,initial.click.y);assert.deepEqual(await page.evaluate(()=>clicks),['e4']);
   const final=await page.evaluate(()=>{
+   const computerStart={...states[0],id:'atomic-computer',mode:'computer'},computerEnd={...states[2],id:'atomic-computer',mode:'computer',revision:1};
+   c.update(computerStart);c.update(computerEnd);const human=c.animation;
+   if(!human||!c.presentationQueue||human.moving.userData.token!=='P')throw Error('Atomic computer response skipped the human move.');
+   c.update(computerEnd);if(c.animation!==human)throw Error('Polling reset the confirmed computer presentation.');
+   human.start=performance.now()-human.duration*0.45;c.render();
+   if(human.moving.position.distanceTo(human.from)<0.1||human.moving.position.distanceTo(human.to)<0.1)throw Error('Confirmed human piece did not visibly travel.');
+   human.start=performance.now()-human.duration;c.render();const reply=c.animation;
+   if(!reply||reply===human||c.presentationQueue||reply.moving.userData.token!=='p')throw Error('Atomic computer response skipped the opponent reply.');
+   reply.start=performance.now()-reply.duration;c.render();if(c.animation||!c.meshes.get('e4')?.userData.baked||!c.meshes.get('d5')?.userData.baked)throw Error('Computer presentation failed to settle the confirmed board.');
+   c.update(computerStart);c.update(computerEnd);c.update(computerEnd,{effects:false});
+   if(c.animation||c.presentationQueue||!c.meshes.has('d5')||!c.meshes.has('e4'))throw Error('Effects cancellation left an intermediate computer board.');
+   c.update(computerStart);c.update(computerEnd,{animate:false});if(c.animation||c.presentationQueue)throw Error('Reconnect animated a skipped computer turn.');
+   c.update(computerStart);c.update(computerEnd);Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));delete document.hidden;
+   if(c.animation||c.presentationQueue||!c.meshes.has('d5')||!c.meshes.has('e4'))throw Error('Hidden tab retained a queued computer reply for later replay.');
+   c.update(computerStart);c.update(computerEnd);c.update({...states[3],id:'atomic-computer',mode:'computer',revision:2});
+   if(c.presentationQueue||!c.animation?.captured||c.animation.captured.position.z!==-0.5)throw Error('A newer snapshot replayed or captured an intermediate queued board.');
+   const castleBefore={id:'castle',revision:0,moves:[],fen:'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'},castleAfter={...castleBefore,revision:1,moves:['e1g1'],fen:'r3k2r/8/8/8/8/8/8/R4RK1 b kq - 1 1'};
+   c.update(castleBefore);c.update(castleAfter);if(c.animation?.companions?.length!==1||c.meshes.get('f1').position.x!==3.5)throw Error('Castling rook snapped instead of moving with the king.');
+   c.finishPresentation();if(c.meshes.get('f1').position.x!==1.5||!c.meshes.get('f1').userData.baked)throw Error('Castling rook did not settle correctly.');
+   c.update(states[0]);
    c.update(states[1]);if(!c.animation||c.meshes.get('e4').userData.baked)throw Error('Moving actor was not articulated.');
    c.update(states[2]);c.animation.start=performance.now()-c.animation.duration*0.35;c.render();
    c.update(states[3],{battleCamera:true});const a=c.animation;

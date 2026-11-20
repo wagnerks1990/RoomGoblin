@@ -33,20 +33,30 @@
    root.addEventListener('lostpointercapture',e=>{if(e.target===root)this.cancelDrag();});
    root.addEventListener('focusin',e=>{const square=e.target.closest('[data-square]')?.dataset.square;if(square){this.focusSquare=square;for(const [id,cell]of this.cells)cell.tabIndex=id===square?0:-1;}});
    root.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){this.selected='';this.paintSelection();this.cancelDrag();return;}
+    if(e.key==='Escape'){this.cancelPremove('Premove cancelled.');this.selected='';this.paintSelection();this.cancelDrag();return;}
     const cells=[...root.children],index=cells.indexOf(e.target.closest('[data-square]'));if(index<0)return;
     const row=Math.floor(index/8),col=index%8;let next=index;
     if(e.key==='ArrowLeft')next=row*8+Math.max(0,col-1);else if(e.key==='ArrowRight')next=row*8+Math.min(7,col+1);else if(e.key==='ArrowUp')next=Math.max(0,row-1)*8+col;else if(e.key==='ArrowDown')next=Math.min(7,row+1)*8+col;else if(e.key==='Home')next=e.ctrlKey?0:row*8;else if(e.key==='End')next=e.ctrlKey?63:row*8+7;else return;
     e.preventDefault();cells[next]?.focus();
    });
-   this.onBlur=()=>this.cancelDrag();window.addEventListener('blur',this.onBlur);
+   this.onBlur=()=>{this.cancelDrag();if(this.cancelPremove('Premove cancelled when the game lost focus.'))this.paintSelection();};window.addEventListener('blur',this.onBlur);
    this.clockTimer=setInterval(()=>this.paintClocks(),100);
    this.notice=make('p','');this.notice.className='cinema-notice';this.notice.setAttribute('role','status');root.after(this.notice);this.keyHelp=make('p','Keyboard: arrow keys move between squares; Enter or Space selects. Home/End moves along a row; Escape clears selection.');this.keyHelp.className='chess-key-help';root.after(this.keyHelp);
+   this.premovePanel=make('div','');this.premovePanel.className='chess-premove';this.premoveStatus=make('span','');this.premoveStatus.setAttribute('role','status');this.premoveCancel=make('button','Cancel premove');this.premoveCancel.type='button';this.premoveCancel.onclick=()=>{this.cancelPremove('Premove cancelled.');this.paintSelection();};this.premovePanel.append(this.premoveStatus,this.premoveCancel);root.after(this.premovePanel);this.paintPremove();
+   this.onVisibility=()=>{if(document.hidden){this.cancelPremove('Premove cancelled while the game was hidden.');this.selected='';this.paintSelection();}};document.addEventListener('visibilitychange',this.onVisibility);
   }
   orientation(){return this.view==='auto'?(this.match?.mode==='solo'?this.match.turn:this.match?.myColor||'white'):this.view;}
   flip(){this.view=this.orientation()==='white'?'black':'white';if(this.match)this.update(this.match,this.options);}
   resetView(){this.view='auto';if(this.match)this.update(this.match,this.options);}
   setCinemaOptions({battleCamera=this.battleCamera,fast=this.fastAnimations}={}){this.battleCamera=!!battleCamera;this.fastAnimations=!!fast;this.paintCinema();}
+  getCameraView(){return {...(this.cameraView||{preset:'angled',orbit:0,tilt:58,zoom:1})};}
+  setCameraView(patch={}){
+   const presets={angled:58,overhead:88,player:38};let view=this.getCameraView();
+   if(Object.hasOwn(presets,patch.preset))view={preset:patch.preset,orbit:0,tilt:presets[patch.preset],zoom:1};
+   for(const [key,min,max] of [['orbit',-180,180],['tilt',25,88],['zoom',.7,1.6]])if(typeof patch[key]==='number'&&Number.isFinite(patch[key]))view[key]=Math.max(min,Math.min(max,patch[key]));
+   this.cameraView=view;if(this.cinema)this.cameraView=this.cinema.setCameraView(view);return this.getCameraView();
+  }
+  resetCameraView(){return this.setCameraView({preset:'angled'});}
   setEffects(enabled){this.effects=enabled;this.root.classList.toggle('effects-off',!enabled);if(this.match)this.paintCinema();}
   setSound(enabled){
    this.sound=enabled;
@@ -62,9 +72,13 @@
   update(match,options={}){
    if(!this.alive||!this.cells.size)return;
    const previous=this.match,newGame=previous?.id!==match.id,changed=newGame||previous?.revision!==match.revision;
+   this.animatePresentation=!options.reconnecting&&!this.options?.reconnecting;
    if(changed){this.cancelDrag();this.selected='';}if(newGame)this.view='auto';
    this.match=match;this.options=options;if(this.clockSource!==match.clocks){this.clockSource=match.clocks;this.clockReceived=performance.now();}this.position=pieces(match.fen);this.moves=new Set(match.legalMoves||[]);
    this.canMove=!!match.myColor&&match.status==='active'&&(match.mode==='solo'||match.turn===match.myColor)&&!options.disabled&&!this.pending;
+   this.canPremove=!!this.premoveIdentity(match)&&match.mode==='multiplayer'&&match.status==='active'&&match.turn!==match.myColor&&!options.disabled&&!options.reconnecting&&!this.pending&&!document.hidden;
+   if(newGame)this.premoveMessage='';
+   this.reconcilePremove();
    const orientation=this.orientation();this.root.dataset.orientation=orientation;
    this.root.classList.toggle('is-interactive',this.canMove);this.root.classList.toggle('in-check',!!match.inCheck&&match.status==='active');this.root.classList.toggle('is-checkmate',match.reason==='checkmate');
    this.root.setAttribute('aria-busy',String(!!this.pending));this.root.dataset.sync=options.reconnecting?'reconnecting':'live';
@@ -80,14 +94,14 @@
     cell.classList.toggle('checked-king',!!match.inCheck&&piece===(match.turn==='white'?'K':'k'));
     pieceNode.textContent=piece==='.'?'':glyph[piece.toLowerCase()];pieceNode.dataset.color=color(piece)||'';
     cell.dataset.piece=piece;cell.setAttribute('aria-label',square+' '+(piece==='.'?'empty':color(piece)+' '+({k:'king',q:'queen',r:'rook',b:'bishop',n:'knight',p:'pawn'})[piece.toLowerCase()]));
-    cell.setAttribute('aria-disabled',String(!this.canMove));
+    cell.setAttribute('aria-disabled',String(!this.canMove&&!this.canPremove));
     const bottom=orientation==='black'?square[1]==='8':square[1]==='1';
     const left=orientation==='black'?square[0]==='h':square[0]==='a';
     cell.querySelector('.coordinate').textContent=(left?square[1]:'')+(bottom?square[0]:'');
    }
    this.paintSelection();this.player(this.topPlayer,orientation==='white'?'black':'white');this.player(this.bottomPlayer,orientation);
    if(this.status){this.status.dataset.state=match.status==='finished'?match.reason:match.inCheck?'check':this.canMove?'your-turn':'waiting';this.status.textContent=match.status==='finished'?resultText(match):this.pending?'Sending your move…':options.disabled?(options.reason||'Read-only view'):match.status==='waiting'?(match.myColor?'Finding your opponent…':'Waiting for a player · Watch or join this game.'):(this.canMove?'Your turn — ':match.myColor?'Opponent’s turn — ':'Watching — ')+(match.turn==='white'?'White':'Black')+(match.inCheck?' · CHECK!':'');}
-   this.paintClocks();this.paintCinema();
+   this.paintClocks();this.paintCinema();this.paintPremove();
    if(changed&&!newGame&&match.moves.length>previous.moves.length&&match.moves.length-previous.moves.length<=2){
     const old=pieces(previous.fen),capture=old.filter(p=>p!=='.').length>this.position.filter(p=>p!=='.').length;
     this.tone(capture);
@@ -109,18 +123,49 @@
   }
   paintSelection(){
    const targets=new Set([...this.moves].filter(m=>m.startsWith(this.selected)&&this.selected).map(m=>m.slice(2,4)));
-   for(const [square,cell] of this.cells){cell.classList.toggle('selected',square===this.selected);cell.setAttribute('aria-pressed',String(square===this.selected));cell.setAttribute('aria-description',this.canMove&&targets.has(square)?'Legal destination for the selected piece.':'');cell.classList.toggle('legal-target',this.canMove&&targets.has(square));}
+   for(const [square,cell] of this.cells){const queued=this.premove&&(square===this.premove.from||square===this.premove.to);cell.classList.toggle('premove-square',!!queued);cell.classList.toggle('selected',square===this.selected);cell.setAttribute('aria-pressed',String(square===this.selected));cell.setAttribute('aria-description',queued?'Queued premove; checked for legality when your turn arrives.':this.canMove&&targets.has(square)?'Legal destination for the selected piece.':'');cell.classList.toggle('legal-target',this.canMove&&targets.has(square));}
    this.paintCinema();
   }
-  own(square){const p=this.position?.[coords.indexOf(square)];return color(p)===this.match?.turn;}
+  premoveIdentity(m){return m?.myColor&&m[m.myColor]?.id?JSON.stringify([m.id,m.myColor,m[m.myColor].id,m.activityId||'',m.seatClassId||'']):null;}
+  paintPremove(){
+   if(!this.premovePanel)return;const eligible=this.match?.mode==='multiplayer'&&!!this.premoveIdentity(this.match)&&this.match.status==='active';
+   this.premovePanel.hidden=!eligible&&!this.premoveMessage;this.premoveCancel.hidden=!this.premove;
+   this.premoveStatus.textContent=this.premove?'Premove queued: '+this.premove.from+' → '+this.premove.to+(this.premove.promotion?' · promote to '+({q:'queen',r:'rook',b:'bishop',n:'knight'})[this.premove.promotion]:'')+'. It plays only if legal after your opponent moves.':this.premoveMessage||(this.canPremove?'Premove: select or drag your piece to queue one move for your next turn.':'You can queue one premove while your opponent is thinking.');
+  }
+  cancelPremove(message=''){
+   const had=!!this.premove;this.premove=null;if(had)this.premoveMessage=message;this.paintPremove();return had;
+  }
+  queuePremove(from,to){
+   if(!this.canPremove||from===to||!coords.includes(to)||!this.own(from)||color(this.position[coords.indexOf(to)])===this.match.myColor)return;
+   const pawn=this.position[coords.indexOf(from)].toLowerCase()==='p',promotion=pawn&&['1','8'].includes(to[1])?this.promotion?.value||'q':'';
+   if(promotion&&!['q','r','b','n'].includes(promotion))return;
+   this.premove={identity:this.premoveIdentity(this.match),from,to,promotion,revision:this.match.revision,fen:this.match.fen,moves:this.match.moves.slice()};this.premoveMessage='';this.selected='';this.paintPremove();this.paintSelection();
+  }
+  reconcilePremove(){
+   const q=this.premove,m=this.match;if(!q)return;
+   if(q.identity!==this.premoveIdentity(m)||m.mode!=='multiplayer'||m.status!=='active'||this.options.disabled||this.options.reconnecting||document.hidden||this.pending){this.cancelPremove('Premove cancelled because the game or connection changed.');return;}
+   const samePrefix=q.moves.every((move,i)=>m.moves[i]===move),added=m.moves.length-q.moves.length;
+   if(!samePrefix||added<0||added>1||m.revision<q.revision||added===0&&m.fen!==q.fen){this.cancelPremove('Premove cancelled after the board changed.');return;}
+   if(m.turn!==m.myColor){if(added!==0)this.cancelPremove('Premove cancelled after the board changed.');return;}
+   const move=q.from+q.to+q.promotion;
+   if(added!==1||m.revision<=q.revision||!this.moves.has(move)){this.cancelPremove('Premove cancelled: that move is not legal in the new position.');return;}
+   if(q.readyFen!==undefined&&(q.readyFen!==m.fen||q.readyRevision!==m.revision)){this.cancelPremove('Premove cancelled after the board changed.');return;}
+   const revision=m.revision,readyFen=m.fen;q.readyFen=readyFen;q.readyRevision=revision;
+   queueMicrotask(()=>{
+    if(this.premove!==q||!this.alive||!this.canMove||this.pending||document.hidden||this.options.disabled||this.options.reconnecting||this.premoveIdentity(this.match)!==q.identity||this.match.revision!==revision||this.match.fen!==readyFen||!this.moves.has(move))return;
+    this.premove=null;this.premoveMessage='Playing your queued move…';this.paintPremove();this.submit(q.from,q.to,q.promotion);
+   });
+  }
+  own(square){const p=this.position?.[coords.indexOf(square)];return color(p)===(this.canPremove?this.match?.myColor:this.match?.turn);}
   choose(square){
+   if(this.canPremove){if(this.selected&&square!==this.selected&&!this.own(square)){this.queuePremove(this.selected,square);return;}this.selected=this.own(square)&&this.selected!==square?square:'';this.paintSelection();return;}
    if(!this.canMove)return;
    if(this.selected&&square!==this.selected&&[...this.moves].some(m=>m.startsWith(this.selected+square))){this.submit(this.selected,square);return;}
    this.selected=this.own(square)&&this.selected!==square?square:'';this.paintSelection();
   }
-  async submit(from,to){
+  async submit(from,to,queuedPromotion){
    if(!this.canMove||this.pending)return;
-   const base=from+to,promotion=[...this.moves].some(m=>m.startsWith(base)&&m.length===5)?this.promotion?.value||'q':'';
+   const base=from+to,promotion=queuedPromotion!==undefined?queuedPromotion:[...this.moves].some(m=>m.startsWith(base)&&m.length===5)?this.promotion?.value||'q':'';
    if(!this.moves.has(base+promotion))return;
    const m=this.match;this.selected='';this.pending=true;this.update(m,this.options);
    try{await this.onMove?.({move:base+promotion,revision:m.revision,matchId:m.id});}
@@ -128,7 +173,7 @@
    finally{this.pending=false;if(this.match)this.update(this.match,this.options);}
   }
   down(e){
-   if(e.button!==0||!this.canMove)return;const square=e.target.closest('[data-square]')?.dataset.square;if(!square||!this.own(square))return;
+   if(e.button!==0||(!this.canMove&&!this.canPremove))return;const square=e.target.closest('[data-square]')?.dataset.square;if(!square||!this.own(square))return;
    this.cancelDrag();this.pointer={id:e.pointerId,from:square,x:e.clientX,y:e.clientY,revision:this.match.revision,matchId:this.match.id};
   }
   drag(e){
@@ -149,7 +194,7 @@
    const square=col>=0&&col<8&&row>=0&&row<8?[...this.root.children][row*8+col]?.dataset.square:null;
    this.cancelDrag();if(!dragged)return;
    this.suppressClick=true;this.later(()=>{this.suppressClick=false;},0);
-   if(p.revision===this.match.revision&&p.matchId===this.match.id&&square)this.submit(p.from,square);
+   if(p.revision===this.match.revision&&p.matchId===this.match.id&&square){if(this.canPremove)this.queuePremove(p.from,square);else this.submit(p.from,square);}
   }
   cancelDrag(){
    this.ghost?.remove();this.ghost=null;
@@ -176,7 +221,7 @@
     if(!this.alive||epoch!==this.epoch||!this.wantCinema)return false;
     if(!this.cinemaHost){this.cinemaHost=make('div','');this.cinemaHost.className='cinema-host';this.cinemaHost.setAttribute('aria-hidden','true');this.root.before(this.cinemaHost);}
     this.cinemaHost.hidden=false;
-    if(!this.cinema)this.cinema=new module.ChessCinema(this.cinemaHost,{onSquare:square=>this.choose(square),onFailure:()=>this.cinemaFailed()});
+    if(!this.cinema){this.cinema=new module.ChessCinema(this.cinemaHost,{onSquare:square=>this.choose(square),onFailure:()=>this.cinemaFailed()});this.cinema.setCameraView(this.getCameraView());}
     this.cinematicMode=true;this.root.parentElement.classList.add('cinematic-mode');this.notice.textContent='3D fantasy view · Switch to 2D anytime for keyboard play.';this.paintCinema();this.onViewChange?.(true);return true;
    }catch{if(epoch===this.epoch)this.cinemaFailed();return false;}
   }
@@ -185,11 +230,11 @@
   }
   paintCinema(){
    if(!this.cinematicMode||!this.cinema||!this.match)return;
-   const targets=[...new Set([...(this.moves||[])].filter(m=>this.selected&&m.startsWith(this.selected)).map(m=>m.slice(2,4)))];
-   try{this.cinema.update(this.match,{orientation:this.orientation(),effects:this.effects&&!reduced(),battleCamera:this.battleCamera,fast:this.fastAnimations,selected:this.selected,targets,disabled:!this.canMove});}catch{this.cinemaFailed();}
+   const targets=this.canMove?[...new Set([...(this.moves||[])].filter(m=>this.selected&&m.startsWith(this.selected)).map(m=>m.slice(2,4)))]:[];
+   try{this.cinema.update(this.match,{orientation:this.orientation(),effects:this.effects&&!reduced(),animate:this.animatePresentation!==false,battleCamera:this.battleCamera,fast:this.fastAnimations,selected:this.selected,targets,disabled:!this.canMove&&!this.canPremove});}catch{this.cinemaFailed();}
   }
-  clear(){this.epoch++;this.wantCinema=false;this.cinema?.destroy();this.cinema=null;this.cinemaHost?.remove();this.cinemaHost=null;this.cinematicMode=false;this.root.parentElement.classList.remove('cinematic-mode');this.cancelDrag();this.match=null;this.clockSource=null;this.selected='';this.focusSquare=null;this.root.replaceChildren();this.cells.clear();this.topPlayer?.replaceChildren();this.bottomPlayer?.replaceChildren();this.notice.textContent='';this.keyHelp.textContent='';this.onViewChange?.(false);}
-  destroy(){this.alive=false;this.clear();clearInterval(this.clockTimer);for(const timer of this.timers)clearTimeout(timer);this.timers.clear();window.removeEventListener('blur',this.onBlur);this.audio?.close().catch(()=>{});}
+  clear(){this.cancelPremove();this.premoveMessage='';this.premovePanel.hidden=true;this.epoch++;this.wantCinema=false;this.cinema?.destroy();this.cinema=null;this.cinemaHost?.remove();this.cinemaHost=null;this.cinematicMode=false;this.root.parentElement.classList.remove('cinematic-mode');this.cancelDrag();this.match=null;this.clockSource=null;this.selected='';this.focusSquare=null;this.root.replaceChildren();this.cells.clear();this.topPlayer?.replaceChildren();this.bottomPlayer?.replaceChildren();this.notice.textContent='';this.keyHelp.textContent='';this.onViewChange?.(false);}
+  destroy(){this.alive=false;this.clear();clearInterval(this.clockTimer);for(const timer of this.timers)clearTimeout(timer);this.timers.clear();window.removeEventListener('blur',this.onBlur);document.removeEventListener('visibilitychange',this.onVisibility);this.audio?.close().catch(()=>{});}
 
  }
  window.RoomGoblinChessBoard=Board;

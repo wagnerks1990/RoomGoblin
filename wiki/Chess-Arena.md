@@ -1,5 +1,18 @@
 # Chess Arena and teaching
 
+New computer games default to Adaptive Live. Adaptive Practice keeps its initial
+challenge/style throughout the game; Adaptive Coach opens teaching help. Fixed
+Normal through Grandmaster levels use a bounded native engine, while legacy
+saved levels remain compatible. These are challenge labels, not certified Elo.
+Private outcome evidence and thresholded aggregate opening trends guide
+adaptation without exposing cross-class profiles or retraining engine weights.
+
+Six guided drills save server-validated, assistance-aware progress separately
+from grades. Coordinate practice is local and untimed or optionally timed.
+The 3D board adds camera presets/orbit/tilt/zoom, confirmed computer-pair
+animations and castling-rook motion. Multiplayer supports one cancellable local
+premove, rechecked against the next server-owned legal position.
+
 Teachers monitor and play at `/learn/chess`; students launch freshly exported
 Chess SCORM packages. Existing assignment capabilities and private participant
 bearers authorize play. Schoology-reported names provide attribution without a

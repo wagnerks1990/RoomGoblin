@@ -5,6 +5,10 @@ const uuid='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
 const directPath=new RegExp(`^/api/v1/learning/direct/(?:activities/(${uuid})(?:/(posts(?:/${uuid}(?:/history)?)?|submit|receipt|enroll|preview))?|platform/activities/(${uuid})/(state|events|presence))$`);
 function route(method,path){
+ const adaptive=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/adaptive$').exec(path);
+ if(adaptive)return method==='GET'?{id:adaptive[1],part:'chess'}:null;
+ const training=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/training/(catalogue|progress|start|sessions/'+uuid+'/(?:attempt|hint))$').exec(path);
+ if(training)return (['catalogue','progress'].includes(training[2])?method==='GET':method==='POST')?{id:training[1],part:'chess'}:null;
  const leaderboard=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/leaderboard$').exec(path);
  if(leaderboard)return method==='GET'?{id:leaderboard[1],part:'chess'}:null;
  const heartbeat=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/heartbeat$').exec(path);

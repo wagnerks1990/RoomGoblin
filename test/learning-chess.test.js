@@ -90,7 +90,7 @@ test('leaderboard includes authoritative checkmate and repetition draws without 
   assert.equal(finish('solo',mate).result,'black');
   const repeat=Array(4).fill(['g1f3','g8f6','f3g1','f6g8']).flat();
   assert.equal(finish('multiplayer',repeat).result,'draw');
-  const practice=c.create(f.a,id,{mode:'computer'});await c.move(f.a,id,practice.id,'e2e4',0);
+  const practice=c.create(f.a,id,{mode:'computer',difficulty:'beginner'});await c.move(f.a,id,practice.id,'e2e4',0);
   const board=c.leaderboard(f.a,id),me=board.players.find(p=>p.me);
   assert.equal(me.games,2);assert.equal(me.losses,1);assert.equal(me.draws,1);assert.equal(me.winRate,0);
   assert.deepEqual(me.soloStats,{started:1,active:0,games:1,wins:0,losses:1,draws:0,stopped:0,winRate:0});
@@ -221,7 +221,7 @@ test('solo and computer games accept legal moves and protect move revisions',asy
   assert.equal(white.body.match.turn,'black');
   let black=await f.request(f.a,base+'/matches/'+solo.body.match.id+'/move','POST',{move:'e7e5',revision:1});
   assert.equal(black.body.match.moves.length,2);
-  let computer=await f.request(f.a,base,'POST',{mode:'computer'});
+  let computer=await f.request(f.a,base,'POST',{mode:'computer',difficulty:'beginner'});
   const move=await f.request(f.a,base+'/matches/'+computer.body.match.id+'/move','POST',{move:'e2e4',revision:0});
   assert.equal(move.status,200);assert.equal(move.body.match.moves.length,2);
   assert.equal(move.body.match.turn,'white');
@@ -327,7 +327,7 @@ test('global leaderboard derives results once, separates practice, and masks oth
   const resignation=await f.request(f.a,aUrl+'/matches/'+id+'/leave','POST',{revision});
   assert.equal(resignation.status,200);
   assert.equal((await f.request(f.a,aUrl+'/matches/'+id+'/leave','POST',{revision})).status,409);
-  const practice=await f.request(f.a,aUrl,'POST',{mode:'computer'});
+  const practice=await f.request(f.a,aUrl,'POST',{mode:'computer',difficulty:'beginner'});
   const practiceMove=await f.request(f.a,aUrl+'/matches/'+practice.body.match.id+'/move','POST',{move:'d2d4',revision:0});
   assert.equal(practiceMove.status,200);
   const publicResult=await f.request(f.outside,bUrl+'/leaderboard');

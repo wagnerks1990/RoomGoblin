@@ -148,7 +148,8 @@ export function advanceCinema(cinema,now){
  const a=cinema.animation;if(!a)return;
  if(!a.choreography){a.defenderFrom=point(a.captured?.position||a.to);a.choreography=createChoreography({from:a.from,to:a.to,defenderFrom:a.defenderFrom,baseYaw:a.baseYaw,defenderYaw:a.captured?.userData.baseYaw||0,capture:!!a.captured,kind:a.moving?.userData.token?.toLowerCase()||'p',defenderKind:a.captured?.userData.token?.toLowerCase()||'p',fast:!!(a.fast||cinema.fast),legLength:a.moving?.userData.rig?.legLength||0.26});a.duration=a.choreography.duration;}
  const shot=a.choreography.sample(Math.max(0,now-a.start));applyActor(a.moving,shot.attacker,shot.t);if(a.captured)applyActor(a.captured,shot.defender,shot.t);cameraImpact(cinema,a,shot);
+ for(const companion of a.companions||[]){const t=ramp(shot.t,0.10,0.84);companion.mesh.position.set(lerp(companion.from.x,companion.to.x,t),companion.to.y,lerp(companion.from.z,companion.to.z,t));}
  if(a.dust){a.dust.position.y=0.08;a.dust.scale.setScalar(Math.max(0.001,shot.dust*1.4));}if(a.halo)a.halo.scale.setScalar(shot.halo);stoneChips(cinema,a,shot);
  if(!shot.finished)cinema.frame=requestAnimationFrame(()=>{cinema.frame=0;cinema.render();});
- else{if(a.moving)a.moving.position.copy(a.to);cinema.restFigure(a.moving);cinema.bakeFigure?.(a.moving);for(const mesh of [a.captured,a.halo,a.dust,...(a.chips||[])])if(mesh){cinema.pieces.remove(mesh);cinema.disposeGeometry(mesh);}cinema.animation=null;}
+ else{if(a.moving)a.moving.position.copy(a.to);cinema.restFigure(a.moving);cinema.bakeFigure?.(a.moving);for(const companion of a.companions||[]){companion.mesh.position.copy(companion.to);cinema.restFigure(companion.mesh);cinema.bakeFigure?.(companion.mesh);}for(const mesh of [a.captured,a.halo,a.dust,...(a.chips||[])])if(mesh){cinema.pieces.remove(mesh);cinema.disposeGeometry(mesh);}cinema.animation=null;cinema.nextPresentation?.();}
 }

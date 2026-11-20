@@ -4,6 +4,11 @@ Chess teaching adds offline piece guides, lessons and independent practice quest
 
 # RoomGoblin
 
+Chess development now includes fixed and adaptive computer challenges, private
+guided practice and coordinate training. See [implementation and release status](docs/CHESS-ROADMAP-STATUS.md)
+and [engine source/licensing](docs/CHESS-ENGINE-SOURCE.md). Adaptive profiles never
+merge students by reported names or expose another class's private play history.
+
 [Discussion reliability](docs/LEARNING-DISCUSSION-RELIABILITY.md) documents SCORM
 readiness, draft recovery, bounded assessment retries and the remaining model/LMS
 qualification requirements.

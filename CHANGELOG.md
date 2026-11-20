@@ -5,6 +5,29 @@
 
 ## Unreleased
 
+- Add fixed Normal through Grandmaster computer challenges using a bounded,
+  pinned native Stockfish process with matching GPL source in the Hub image.
+  Preserve legacy saved levels. New computer games default to Adaptive Live;
+  Adaptive Practice holds settings during a game and Adaptive Coach opens help.
+- Learn bounded private outcome and opening-pattern summaries from completed
+  games, with assistance-aware strength evidence, owner-only profile/decision
+  views and thresholded aggregate trends. Live adaptive replies can change one
+  difficulty band and playing style from the confirmed position. No neural
+  retraining, certified rating or external student telemetry is claimed.
+- Add six server-validated guided drills with durable private progress and
+  progressive hints, plus accessible local coordinate practice. Neither changes
+  participation grades or multiplayer results.
+
+- Add adjustable 3D camera presets, rotation, tilt, zoom and reset to teacher and
+  SCORM chess. Animate the two confirmed plies in computer replies sequentially
+  and animate the rook during castling. Preserve camera choices across polling
+  and settle obsolete animation on reconnect or hidden/reduced-motion state.
+- Add one cancellable multiplayer premove, checked against the next authoritative
+  legal-move list and submitted once with its current revision. Never persist,
+  replay after reconnect or automatically retry a rejected intent.
+- Document Chess.com public feature research and an original RoomGoblin roadmap
+  for coaching, lessons, puzzles, completed-game review and teacher progress tools.
+
 - Export the optional SCORM 3D renderer with a standard `.js` filename so LMS
   hosts that do not recognize `.mjs` can serve it as JavaScript. Test the actual
   exported Fantasy 3D toggle inside an LMS iframe; preserve assignment identity,

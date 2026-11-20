@@ -2,6 +2,15 @@
 
 Read `docs/CHESS-ARENA.md` before modifying chess, direct SCORM, or learner identity. The universal chess lobby deliberately spans classes without expanding enrollment, administrative permissions, roster access, grade access, or student gateway reachability. LMS-reported names are attribution, not verified identity. Existing enrollment capability and per-student private bearer remain the only direct SCORM authorization. `/learn/chess` requires normal teacher login and must remain denied by the student gateway. Validate moves server-side and use transaction/revision checks. Before releasing, test actual Schoology launch/resume/grade, gateway denial, cross-class privacy and regression suite. Never use SCORM-reported fields to authorize physical attendance or effects.
 
+Adaptive chess uses private outcome summaries and bounded engine selection, not
+online model training or measured Elo. Read `docs/CHESS-ADAPTIVE-BOTS-RESEARCH.md`
+and `docs/CHESS-ENGINE-SOURCE.md`. Preserve old game difficulty IDs and exact
+histories; only new computer games default to Adaptive Live. No position advice
+for live multiplayer. Guided drills and coordinate practice never change grades
+or competitive results. Keep native search outside transactions, share the
+two-search budget with legacy workers, and distinguish cancellation (`close`)
+from waiting (`drain`). Ship matching GPL source with the pinned native engine.
+
 # AI and Contributor Operating Contract
 
 ## Presentation start and preview
