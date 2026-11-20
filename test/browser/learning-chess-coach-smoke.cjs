@@ -49,6 +49,16 @@ const AdmZip=require('adm-zip'),path=require('node:path');
   const fa=a.frameLocator('#assignment'),fb=b.frameLocator('#assignment');
   assert.equal(await fa.locator('#practice-hint').isDisabled(),true);
   await fa.locator('#solo').click();await fa.locator('#board.is-interactive').waitFor();const coach=fa.locator('#chess-coach');const beforeScore=await a.evaluate(()=>values['cmi.core.score.raw']);
+  // This LMS fixture deliberately recognizes .js but serves unknown extensions
+  // as HTML. Exercise the actual exported renderer, not the teacher asset route.
+  await fa.locator('#cinematic').click();
+  await fa.locator('#cinematic[aria-pressed="true"]').waitFor();
+  await fa.locator('.cinema-host canvas').waitFor({state:'visible'});
+  assert.match(await fa.locator('.cinema-notice').textContent(),/3D fantasy view/);
+  await fa.locator('#cinematic').click();
+  await fa.locator('#board.is-interactive').waitFor({state:'visible'});
+  assert.equal(await a.evaluate(()=>values['cmi.core.score.raw']),beforeScore);
+  pass('Exported Fantasy 3D loads inside the LMS iframe with standard .js MIME mapping and returns to 2D without scoring');
   await fa.locator('#practice-hint').click();await coach.locator('.rg-coach-hints h3').waitFor();assert.match(await coach.locator('.rg-coach-hints').textContent(),/practice position/);assert.equal(await a.evaluate(()=>values['cmi.core.score.raw']),beforeScore);assert.equal(JSON.parse(f.store.db.prepare("SELECT moves_json FROM learning_chess_matches WHERE mode='solo'").get().moves_json).length,0);pass('Exported SCO assets render practice explanations through exact SDK and isolated gateway without scoring or moving');
   await coach.locator('.rg-coach-answers').getByRole('button',{name:'e4',exact:true}).click();assert.match(await coach.locator('.rg-coach-feedback').textContent(),/Correct/);await fa.locator('#refresh').click();assert.match(await coach.locator('.rg-coach-feedback').textContent(),/Correct/);pass('Student lesson answers survive authoritative refreshes');
   let readReady,releaseRead;const oldRead=new Promise(r=>readReady=r),readGate=new Promise(r=>releaseRead=r);let heldRead=false;await a.route('**/chess',async route=>{if(route.request().method()!=='GET'||heldRead)return route.continue();heldRead=true;const response=await route.fetch();readReady();await readGate;await route.fulfill({response});});await fa.locator('#refresh').evaluate(n=>n.click());await oldRead;await fa.locator('#solo').click();const newSaved=await fa.locator('#lobby button[aria-pressed="true"]').getAttribute('data-match-id');await fa.locator('body').evaluate((_,id)=>{window.savedDisappeared=false;window.savedObserver=new MutationObserver(()=>{if(!document.querySelector('#lobby [data-match-id="'+id+'"]'))savedDisappeared=true;});savedObserver.observe(document.getElementById('lobby'),{childList:true,subtree:true});},newSaved);releaseRead();await a.waitForTimeout(600);assert.equal(await fa.locator('body').evaluate(()=>savedDisappeared),false);await fa.locator('body').evaluate(()=>savedObserver.disconnect());await a.unroute('**/chess');pass('A pre-creation student read cannot overwrite a newly saved game');
